@@ -13,6 +13,7 @@ import {
   FileUp,
   FolderGit2,
   Inbox,
+  Italic,
   Loader2,
   Link,
   Mail,
@@ -36,6 +37,7 @@ import {
   TerminalSquare,
   Trash2,
   Type,
+  Underline,
   UserPlus,
   Users,
   X
@@ -2225,8 +2227,7 @@ function SignaturesView({
   onNotice: (message: string | null) => void;
 }) {
   const [selectedMailboxId, setSelectedMailboxId] = useState(mailboxes[0]?.id ?? "");
-  const [textSignature, setTextSignature] = useState("");
-  const [htmlSignature, setHtmlSignature] = useState("");
+  const [signatureDraft, setSignatureDraft] = useState<RichEditorValue>({ html: "", text: "" });
   const [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -2238,8 +2239,7 @@ function SignaturesView({
 
   useEffect(() => {
     const signature = signatures.find((item) => item.mailbox_id === selectedMailboxId);
-    setTextSignature(signature?.text_signature ?? "");
-    setHtmlSignature(signature?.html_signature ?? "");
+    setSignatureDraft(createSignatureDraft(signature));
     setEnabled(signature?.enabled !== 0);
   }, [selectedMailboxId, signatures]);
 
@@ -2251,7 +2251,12 @@ function SignaturesView({
 
     setBusy(true);
     try {
-      await api.saveSignature(selectedMailbox.id, { textSignature, htmlSignature, enabled });
+      const htmlSignature = prepareOutgoingHtml(signatureDraft) ?? "";
+      await api.saveSignature(selectedMailbox.id, {
+        textSignature: signatureDraft.text.trim(),
+        htmlSignature,
+        enabled
+      });
       await onChange();
       onNotice("Signature saved");
     } catch (error) {
@@ -2307,36 +2312,56 @@ function SignaturesView({
             </div>
             <PenLine size={18} />
           </header>
-          <form className="stack-form" onSubmit={saveSignature}>
-            <label className="check-row">
-              <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
-              Enabled
-            </label>
-            <label>
-              Plain text
-              <textarea
-                value={textSignature}
-                onChange={(event) => setTextSignature(event.target.value)}
-                placeholder={"Best regards,\nEmailfox Team"}
+          <form className="signature-form" onSubmit={saveSignature}>
+            <div className="signature-status-row">
+              <label className="check-row signature-toggle">
+                <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+                <span>
+                  <strong>{enabled ? "Enabled" : "Disabled"}</strong>
+                  <small>{enabled ? "This signature is appended to outgoing mail." : "Outgoing mail will not include this signature."}</small>
+                </span>
+              </label>
+              <StatusPill ok={signatureDraft.text.trim().length > 0} label={signatureDraft.text.trim() ? "Ready" : "Empty"} />
+            </div>
+
+            <RichTextEditor value={signatureDraft} onChange={setSignatureDraft} placeholder="Best regards, Emailfox Team" />
+
+            <section className="signature-preview-card">
+              <header>
+                <span>Preview</span>
+                <small>Links and styles are saved as email HTML.</small>
+              </header>
+              <div
+                className={signatureDraft.text.trim() ? "signature-preview-body" : "signature-preview-body empty"}
+                dangerouslySetInnerHTML={{
+                  __html: signatureDraft.text.trim() ? prepareOutgoingHtml(signatureDraft) ?? "" : "No signature content"
+                }}
               />
-            </label>
-            <label>
-              HTML
-              <textarea
-                value={htmlSignature}
-                onChange={(event) => setHtmlSignature(event.target.value)}
-                placeholder="<p>Best regards,<br>Emailfox Team</p>"
-              />
-            </label>
-            <button className="button primary" type="submit" disabled={busy || !selectedMailbox}>
-              <Save size={16} />
-              Save signature
-            </button>
+            </section>
+
+            <div className="signature-actions">
+              <button className="button primary" type="submit" disabled={busy || !selectedMailbox}>
+                <Save size={16} />
+                {busy ? "Saving" : "Save signature"}
+              </button>
+            </div>
           </form>
         </section>
       </div>
     </section>
   );
+}
+
+function createSignatureDraft(signature: MailboxSignatureRow | undefined): RichEditorValue {
+  if (!signature) {
+    return { html: "", text: "" };
+  }
+
+  const html = sanitizeEmailHtml(signature.html_signature?.trim() || textToHtmlWithLinks(signature.text_signature));
+  return {
+    html,
+    text: signature.text_signature.trim() || htmlToPlainText(html)
+  };
 }
 
 function ExternalAccountsView({
@@ -2820,6 +2845,12 @@ function RichTextEditor({
       <div className="rich-toolbar" aria-label="Message formatting">
         <button className="icon-button" type="button" onClick={() => runCommand("bold")} title="Bold">
           <Bold size={15} />
+        </button>
+        <button className="icon-button" type="button" onClick={() => runCommand("italic")} title="Italic">
+          <Italic size={15} />
+        </button>
+        <button className="icon-button" type="button" onClick={() => runCommand("underline")} title="Underline">
+          <Underline size={15} />
         </button>
         <label className="rich-color-button" title="Text color">
           <Type size={15} />
@@ -3637,6 +3668,12 @@ function formatBytes(value: number): string {
 function prepareOutgoingHtml(value: RichEditorValue): string | null {
   if (!value.text.trim()) return null;
   return sanitizeEmailHtml(autoLinkHtml(value.html || textToHtmlWithLinks(value.text))).trim() || textToHtmlWithLinks(value.text);
+}
+
+function htmlToPlainText(html: string): string {
+  const container = document.createElement("div");
+  container.innerHTML = sanitizeEmailHtml(html);
+  return container.innerText.replace(/\u00a0/g, " ").trim();
 }
 
 function textToHtmlWithLinks(text: string): string {

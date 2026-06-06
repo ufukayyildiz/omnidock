@@ -1365,6 +1365,106 @@ button:hover:not(:disabled) {
 
 .signature-editor {
   align-content: stretch;
+  overflow: auto;
+}
+
+.signature-form {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.signature-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-alt);
+}
+
+.signature-toggle {
+  min-width: 0;
+}
+
+.signature-toggle span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.signature-toggle strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.signature-toggle small {
+  color: var(--muted);
+  font: 11px/1.3 var(--mono);
+}
+
+.signature-editor .rich-editor-surface {
+  min-height: 180px;
+  max-height: 340px;
+}
+
+.signature-preview-card {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-alt);
+}
+
+.signature-preview-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.signature-preview-card header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.signature-preview-card header small {
+  color: var(--muted);
+  font: 11px/1.2 var(--mono);
+}
+
+.signature-preview-body {
+  min-height: 90px;
+  padding: 12px;
+  background: var(--panel);
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.signature-preview-body.empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font: 12px/1.2 var(--mono);
+}
+
+.signature-preview-body a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.signature-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .external-editor {
@@ -1656,6 +1756,7 @@ button:hover:not(:disabled) {
 .rich-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-height: 38px;
   padding: 5px;
