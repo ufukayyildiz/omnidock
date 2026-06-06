@@ -2447,6 +2447,68 @@ button:hover:not(:disabled) {
   z-index: 30;
 }
 
+.app-dialog-scrim {
+  z-index: 60;
+}
+
+.app-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(480px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow-strong);
+}
+
+.app-dialog header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.app-dialog-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--ok-line);
+  border-radius: var(--radius);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.app-dialog.danger .app-dialog-icon {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--line));
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  color: var(--danger);
+}
+
+.app-dialog strong {
+  color: var(--text);
+}
+
+.app-dialog-message {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app-dialog-message strong {
+  color: var(--text);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .compose-modal {
   display: grid;
   gap: 12px;

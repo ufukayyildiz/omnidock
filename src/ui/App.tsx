@@ -42,7 +42,7 @@ import {
   Users,
   X
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, FormEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiClient,
   ApiRequestError,
@@ -94,12 +94,33 @@ type SelectOption = {
   label: string;
   description?: string;
 };
+type AppDialogTone = "default" | "danger";
+type AppConfirmOptions = {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: AppDialogTone;
+};
+type AppPromptOptions = AppConfirmOptions & {
+  defaultValue?: string;
+  placeholder?: string;
+};
+type AppDialogApi = {
+  confirm: (options: AppConfirmOptions) => Promise<boolean>;
+  prompt: (options: AppPromptOptions) => Promise<string | null>;
+};
+type ActiveDialog =
+  | ({ kind: "confirm" } & AppConfirmOptions)
+  | ({ kind: "prompt" } & AppPromptOptions);
 type ContactParseResult = {
   contacts: ContactInput[];
   scanned: number;
   duplicateEmails: number;
   ignoredRows: number;
 };
+
+const AppDialogContext = createContext<AppDialogApi | null>(null);
 
 const palettes: {
   key: PaletteKey;
@@ -193,6 +214,111 @@ function initialRefreshIntervalSeconds(): number {
 }
 
 export function App() {
+  return (
+    <AppDialogProvider>
+      <AppContent />
+    </AppDialogProvider>
+  );
+}
+
+function AppDialogProvider({ children }: { children: ReactNode }) {
+  const [dialog, setDialog] = useState<ActiveDialog | null>(null);
+  const [promptValue, setPromptValue] = useState("");
+  const resolverRef = useRef<((value: boolean | string | null) => void) | null>(null);
+
+  const closeDialog = useCallback((value: boolean | string | null) => {
+    const resolver = resolverRef.current;
+    resolverRef.current = null;
+    setDialog(null);
+    if (resolver) resolver(value);
+  }, []);
+
+  const confirm = useCallback((options: AppConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      resolverRef.current = (value) => resolve(value === true);
+      setDialog({ kind: "confirm", ...options });
+    });
+  }, []);
+
+  const prompt = useCallback((options: AppPromptOptions) => {
+    return new Promise<string | null>((resolve) => {
+      setPromptValue(options.defaultValue ?? "");
+      resolverRef.current = (value) => resolve(typeof value === "string" ? value : null);
+      setDialog({ kind: "prompt", ...options });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!dialog) return;
+    const activeDialog = dialog;
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeDialog(activeDialog.kind === "prompt" ? null : false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [closeDialog, dialog]);
+
+  const value = useMemo(() => ({ confirm, prompt }), [confirm, prompt]);
+  const confirmLabel = dialog?.confirmLabel ?? (dialog?.kind === "prompt" ? "Apply" : "OK");
+  const cancelLabel = dialog?.cancelLabel ?? "Cancel";
+  const isDanger = dialog?.tone === "danger";
+
+  return (
+    <AppDialogContext.Provider value={value}>
+      {children}
+      {dialog ? (
+        <div className="modal-scrim app-dialog-scrim" role="dialog" aria-modal="true" aria-labelledby="app-dialog-title">
+          <form
+            className={isDanger ? "app-dialog danger" : "app-dialog"}
+            onSubmit={(event) => {
+              event.preventDefault();
+              closeDialog(dialog.kind === "prompt" ? promptValue : true);
+            }}
+          >
+            <header>
+              <span className="app-dialog-icon">{isDanger ? <AlertTriangle size={17} /> : <ShieldCheck size={17} />}</span>
+              <div>
+                <strong id="app-dialog-title">{dialog.title}</strong>
+                <div className="app-dialog-message">{dialog.message}</div>
+              </div>
+            </header>
+            {dialog.kind === "prompt" ? (
+              <input
+                className="text-input"
+                value={promptValue}
+                onChange={(event) => setPromptValue(event.target.value)}
+                placeholder={dialog.placeholder}
+                autoFocus
+              />
+            ) : null}
+            <div className="app-dialog-actions">
+              <button className="button ghost" type="button" onClick={() => closeDialog(dialog.kind === "prompt" ? null : false)}>
+                {cancelLabel}
+              </button>
+              <button className={isDanger ? "button danger" : "button primary"} type="submit">
+                {confirmLabel}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </AppDialogContext.Provider>
+  );
+}
+
+function useAppDialog(): AppDialogApi {
+  const dialog = useContext(AppDialogContext);
+  if (!dialog) {
+    throw new Error("App dialog context is not available");
+  }
+  return dialog;
+}
+
+function AppContent() {
   const initialResetToken = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
   const [palette, setPalette] = useState<PaletteKey>(initialPalette);
   const [password, setPassword] = useState(() => sessionStorage.getItem(PASSWORD_KEY) ?? "");
@@ -2057,6 +2183,7 @@ function ContactsView({
   const [draft, setDraft] = useState<ContactInput>(() => createContactDraft());
   const [importLog, setImportLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const dialog = useAppDialog();
   const selectedContact = contacts.find((contact) => contact.id === selectedId) ?? null;
 
   useEffect(() => {
@@ -2099,7 +2226,16 @@ function ContactsView({
 
   async function removeContact() {
     if (!api || !selectedContact) return;
-    const confirmed = window.confirm(`Delete contact ${selectedContact.email}?`);
+    const confirmed = await dialog.confirm({
+      title: "Delete contact",
+      message: (
+        <>
+          Delete <strong>{selectedContact.email}</strong> from contacts?
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger"
+    });
     if (!confirmed) return;
 
     setBusy(true);
@@ -2464,6 +2600,7 @@ function ExternalAccountsView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ExternalAccountInput>(() => createExternalDraft("gmail"));
   const [busy, setBusy] = useState(false);
+  const dialog = useAppDialog();
 
   useEffect(() => {
     if (selectedId && !accounts.some((account) => account.id === selectedId)) {
@@ -2521,7 +2658,16 @@ function ExternalAccountsView({
 
   async function removeAccount() {
     if (!api || !selectedAccount) return;
-    const confirmed = window.confirm(`Delete external account ${selectedAccount.email}?`);
+    const confirmed = await dialog.confirm({
+      title: "Delete external account",
+      message: (
+        <>
+          Delete <strong>{selectedAccount.email}</strong> from external accounts?
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger"
+    });
     if (!confirmed) return;
 
     setBusy(true);
@@ -2847,6 +2993,7 @@ function BucketsView({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const dialog = useAppDialog();
   const selectedObject = objects.find((object) => object.key === selectedKey) ?? null;
 
   async function loadObjects(nextPrefix = prefix, nextCursor: string | null = null, append = false) {
@@ -2900,7 +3047,16 @@ function BucketsView({
 
   async function deleteObject(object: BucketObjectRow) {
     if (!api || !activeBucket) return;
-    const confirmed = window.confirm(`Delete ${object.key}?`);
+    const confirmed = await dialog.confirm({
+      title: "Delete R2 object",
+      message: (
+        <>
+          Delete <strong>{object.key}</strong> from <strong>{activeBucket.name}</strong>? This cannot be undone.
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger"
+    });
     if (!confirmed) return;
 
     setLoading(true);
@@ -3257,6 +3413,7 @@ function RichTextEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const [textColor, setTextColor] = useState("#111827");
   const [backgroundColor, setBackgroundColor] = useState("#fff3bf");
+  const dialog = useAppDialog();
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -3284,11 +3441,25 @@ function RichTextEditor({
     emitValue();
   }
 
-  function addLink() {
-    const selectedText = window.getSelection()?.toString().trim() ?? "";
+  async function addLink() {
+    const selection = window.getSelection();
+    const selectedText = selection?.toString().trim() ?? "";
+    const selectedRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
     const initialValue = selectedText && normalizeLinkHref(selectedText) ? selectedText : "https://";
-    const href = normalizeLinkHref(window.prompt("Link URL", initialValue) ?? "");
+    const input = await dialog.prompt({
+      title: "Add link",
+      message: "Paste a URL for the selected text.",
+      defaultValue: initialValue,
+      placeholder: "https://example.com",
+      confirmLabel: "Add link"
+    });
+    const href = normalizeLinkHref(input ?? "");
     if (!href) return;
+    if (selectedRange) {
+      const restoredSelection = window.getSelection();
+      restoredSelection?.removeAllRanges();
+      restoredSelection?.addRange(selectedRange);
+    }
     runCommand("createLink", href);
   }
 
@@ -3326,7 +3497,7 @@ function RichTextEditor({
             }}
           />
         </label>
-        <button className="icon-button" type="button" onClick={addLink} title="Add link">
+        <button className="icon-button" type="button" onClick={() => void addLink()} title="Add link">
           <Link size={15} />
         </button>
       </div>
@@ -3367,6 +3538,7 @@ function ThreadDetail({
   const [replyError, setReplyError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentRow | null>(null);
+  const dialog = useAppDialog();
   const firstMessage = thread?.messages[0] ?? null;
   const lastInbound = [...(thread?.messages ?? [])].reverse().find((message) => message.direction === "inbound");
   const sendableMailboxes = useMemo(() => mailboxes.filter((mailbox) => mailbox.enabled === 1), [mailboxes]);
@@ -3448,7 +3620,12 @@ function ThreadDetail({
 
   async function deleteCurrentThread() {
     if (!api || !firstMessage) return;
-    const confirmed = window.confirm("Delete this thread and its stored message files permanently?");
+    const confirmed = await dialog.confirm({
+      title: "Delete thread",
+      message: "Delete this thread and its stored message files permanently? This cannot be undone.",
+      confirmLabel: "Delete",
+      tone: "danger"
+    });
     if (!confirmed) return;
 
     setReplyError(null);
