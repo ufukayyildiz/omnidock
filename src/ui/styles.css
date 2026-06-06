@@ -912,9 +912,12 @@ button:hover:not(:disabled) {
 
 .rules-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(360px, 1fr);
+  grid-template-columns: minmax(300px, 360px) minmax(520px, 1fr);
+  grid-template-rows: auto minmax(220px, 1fr);
   gap: 12px;
+  height: 100%;
   min-height: 0;
+  align-content: start;
 }
 
 .rules-card,
@@ -973,6 +976,7 @@ button:hover:not(:disabled) {
 
 .routing-summary {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1034,13 +1038,17 @@ button:hover:not(:disabled) {
 }
 
 .domain-card-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.domain-card-actions .button {
-  flex: 1 1 170px;
+.mailbox-rule-card {
+  min-height: 0;
+}
+
+.domain-rule-card {
+  min-height: 0;
 }
 
 .rule-create-form {
@@ -1195,6 +1203,7 @@ button:hover:not(:disabled) {
 
 .rule-row-list {
   min-height: 0;
+  max-height: 100%;
   overflow: auto;
 }
 
@@ -1872,6 +1881,13 @@ button:hover:not(:disabled) {
   }
 
   .rules-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    height: auto;
+  }
+
+  .routing-summary,
+  .domain-card-actions {
     grid-template-columns: 1fr;
   }
 

@@ -1445,30 +1445,10 @@ function RulesView({
   const domainMailboxes = selectedDomain
     ? mailboxes.filter((mailbox) => mailbox.domain_id === selectedDomain.id)
     : [];
-  const [domainDraft, setDomainDraft] = useState("");
   const [localPart, setLocalPart] = useState("");
   const [createRule, setCreateRule] = useState(true);
   const [domainsOpen, setDomainsOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-
-  async function submitDomain(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!api || !domainDraft.trim()) return;
-
-    setBusyKey("domain");
-    try {
-      const result = await api.addDomain(domainDraft);
-      setDomainDraft("");
-      onDomainChange(result.domain.id);
-      setDomainsOpen(true);
-      await onChange();
-      onNotice("Domain saved");
-    } catch (error) {
-      onNotice(readError(error));
-    } finally {
-      setBusyKey(null);
-    }
-  }
 
   async function makeDefaultDomain(domain: DomainRow) {
     if (!api || domain.is_default === 1) return;
@@ -1495,7 +1475,7 @@ function RulesView({
       await api.createMailbox(selectedDomain.id, localPart, null, createRule);
       setLocalPart("");
       await onChange();
-      onNotice("Mailbox saved");
+      onNotice("Email address saved");
     } catch (error) {
       onNotice(readError(error));
     } finally {
@@ -1580,33 +1560,44 @@ function RulesView({
       </div>
 
       <div className="rules-grid">
-        <section className="rules-card">
+        {selectedDomain ? (
+        <section className="rules-card mailbox-rule-card">
           <header>
             <div>
-              <span>Domain</span>
-              <strong>Add domain</strong>
+              <span>Email address</span>
+              <strong>Add @{selectedDomain.domain}</strong>
             </div>
-            <Server size={18} />
+            <Mail size={18} />
           </header>
-          <form className="rule-create-form" onSubmit={submitDomain}>
-            <div className="inline-input">
+          <form className="rule-create-form" onSubmit={submitMailbox}>
+            <div className="inline-input split">
               <input
-                value={domainDraft}
-                onChange={(event) => setDomainDraft(event.target.value)}
-                placeholder="client.com"
+                value={localPart}
+                onChange={(event) => setLocalPart(event.target.value)}
+                placeholder="support"
                 disabled={busyKey !== null}
               />
+              <span>@{selectedDomain.domain}</span>
               <button
                 className="icon-button strong"
                 type="submit"
-                disabled={busyKey !== null || !domainDraft.trim()}
-                title="Add domain"
+                disabled={busyKey !== null || !localPart.trim()}
+                title="Create email address"
               >
                 <Plus size={16} />
               </button>
             </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={createRule}
+                onChange={(event) => setCreateRule(event.target.checked)}
+              />
+              Create Worker route for incoming mail
+            </label>
           </form>
         </section>
+        ) : null}
 
         {selectedDomain ? (
         <section className="rules-card domain-rule-card">
@@ -1615,7 +1606,6 @@ function RulesView({
               <span>Domain</span>
               <strong>{selectedDomain.domain}</strong>
             </div>
-            <StatusPill ok={selectedDomain.zone_id !== null} label={selectedDomain.zone_id ? "Cloudflare zone" : "Zone missing"} />
           </header>
           <div className="status-matrix">
             <StatusPill ok={isDefaultDomain} label={isDefaultDomain ? "Default domain" : "Not default"} />
@@ -1658,56 +1648,17 @@ function RulesView({
           </div>
         </section>
         ) : (
-          <section className="rules-card domain-rule-card">
-            <header>
-              <div>
-                <span>Domain</span>
-                <strong>No domain selected</strong>
-              </div>
-              <Server size={18} />
-            </header>
-            <div className="empty-state">Add a domain to create mailboxes and routing rules.</div>
-          </section>
-        )}
-
-        {selectedDomain ? (
         <section className="rules-card">
           <header>
             <div>
-              <span>Mailbox</span>
-              <strong>{domainMailboxes.length} addresses</strong>
+              <span>Domain</span>
+              <strong>No domain selected</strong>
             </div>
-            <Mail size={18} />
+            <Server size={18} />
           </header>
-          <form className="rule-create-form" onSubmit={submitMailbox}>
-            <div className="inline-input split">
-              <input
-                value={localPart}
-                onChange={(event) => setLocalPart(event.target.value)}
-                placeholder="support"
-                disabled={busyKey !== null}
-              />
-              <span>@{selectedDomain.domain}</span>
-              <button
-                className="icon-button strong"
-                type="submit"
-                disabled={busyKey !== null || !localPart.trim()}
-                title="Create mailbox"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={createRule}
-                onChange={(event) => setCreateRule(event.target.checked)}
-              />
-              Worker rule
-            </label>
-          </form>
+          <div className="empty-state">Run Sync Cloudflare to load domains from your Cloudflare account.</div>
         </section>
-        ) : null}
+        )}
 
         {selectedDomain ? (
         <section className="rules-table-card">
