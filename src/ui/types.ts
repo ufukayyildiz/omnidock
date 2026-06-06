@@ -117,7 +117,7 @@ export type SetupStatusPayload = {
 };
 
 export type RuntimeRequirement = {
-  kind: "binding" | "secret";
+  kind: "binding" | "secret" | "variable";
   name: string;
   required: boolean;
   configured: boolean;

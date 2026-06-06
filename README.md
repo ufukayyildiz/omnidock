@@ -84,7 +84,7 @@ Mailbox rules are safer for most setups. Catch-all is powerful, but it also rece
 
 ### First Admin Account
 
-After the first deploy, add the `ADMIN_PASSWORD` secret. If no admin account exists, Emailfox shows the setup screen and asks for:
+After the first deploy, add the required runtime values: `ADMIN_PASSWORD` as a secret, `PRIMARY_DOMAIN` as a plaintext variable, and `CLOUDFLARE_API_TOKEN` as a secret. If no admin account exists, Emailfox shows the setup screen and asks for:
 
 - Name
 - Email
@@ -108,29 +108,29 @@ Recommended permissions:
 - Zone > Email Routing > Edit
 - Account > Workers Scripts > Read
 
-If your token can access exactly one Cloudflare account, Emailfox detects that account automatically. If it can access multiple accounts, add `CLOUDFLARE_ACCOUNT_ID` as a secret too.
+If your token can access exactly one Cloudflare account, Emailfox detects that account automatically. If it can access multiple accounts, add `CLOUDFLARE_ACCOUNT_ID` as a plaintext variable too.
 
-## Cloudflare Secrets
+## Cloudflare Variables And Secrets
 
 After the first deploy, open:
 
-`Worker > Settings > Variables and Secrets > Add > Secret`
+`Worker > Settings > Variables and Secrets > Add`
 
-Add Emailfox runtime settings in that Cloudflare screen. Choose `Secret`, not plaintext variable.
+Add Emailfox runtime settings in that Cloudflare screen. Use `Secret` only for sensitive values. Use plaintext variables for non-sensitive routing and display values.
 
-Cloudflare does not create empty secret rows from the repository. Add one row for each secret you need: paste the exact value from `Name` into the Cloudflare `Name` field, type your own value into `Value`, then save.
+Cloudflare does not create empty rows from the repository. Add one row for each value you need: choose the `Type`, paste the exact value from `Name` into the Cloudflare `Name` field, type your own value into `Value`, then save.
 
-| Name | Value to type | When to add |
-| --- | --- | --- |
-| `ADMIN_PASSWORD` | First admin password, at least 12 characters | Required before first setup |
-| `PRIMARY_DOMAIN` | Your first email domain, for example `example.com` | Required before first setup |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Required before first setup |
-| `WORKER_SCRIPT_NAME` | Deployed Worker script name, for example `emailfox` | Add when you want Emailfox to create Email Routing rules |
-| `MANAGEMENT_HOST` | Custom dashboard hostname, for example `mail.example.com` | Add only for a custom dashboard hostname |
-| `PASSWORD_RESET_FROM` | Verified reset sender, for example `no-reply@example.com` | Add only for a custom verified reset sender |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id | Add only if one token can access multiple Cloudflare accounts |
+| Type | Name | Value to type | When to add |
+| --- | --- | --- | --- |
+| Secret | `ADMIN_PASSWORD` | First admin password, at least 12 characters | Required before first setup |
+| Plaintext variable | `PRIMARY_DOMAIN` | Your first email domain, for example `example.com` | Required before first setup |
+| Secret | `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Required before first setup |
+| Plaintext variable | `WORKER_SCRIPT_NAME` | Deployed Worker script name, for example `emailfox` | Add when you want Emailfox to create Email Routing rules |
+| Plaintext variable | `MANAGEMENT_HOST` | Custom dashboard hostname, for example `mail.example.com` | Add only for a custom dashboard hostname |
+| Plaintext variable | `PASSWORD_RESET_FROM` | Verified reset sender, for example `no-reply@example.com` | Add only for a custom verified reset sender |
+| Plaintext variable | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id | Add only if one token can access multiple Cloudflare accounts |
 
-Do not add these values as plaintext Worker variables. Keep them as secrets.
+`PRIMARY_DOMAIN` is not a secret. It is fine as a plaintext variable. Do not add `ADMIN_PASSWORD` or `CLOUDFLARE_API_TOKEN` as plaintext variables.
 
 D1 and R2 are not secrets. Add them as Cloudflare bindings/resources:
 
@@ -238,21 +238,18 @@ npm run deploy:with-migrations
 
 Then set Emailfox runtime settings in Cloudflare:
 
-`Worker > Settings > Variables and Secrets > Add > Secret`
+`Worker > Settings > Variables and Secrets > Add`
 
-Wrangler equivalent:
+Wrangler secret equivalent:
 
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
-npx wrangler secret put PRIMARY_DOMAIN
 npx wrangler secret put CLOUDFLARE_API_TOKEN
-npx wrangler secret put WORKER_SCRIPT_NAME
-npx wrangler secret put MANAGEMENT_HOST
-npx wrangler secret put PASSWORD_RESET_FROM
-npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-Set `ADMIN_PASSWORD`, `PRIMARY_DOMAIN`, and `CLOUDFLARE_API_TOKEN` before first setup. Only set the optional secrets you need.
+Set plaintext variables such as `PRIMARY_DOMAIN`, `WORKER_SCRIPT_NAME`, `MANAGEMENT_HOST`, `PASSWORD_RESET_FROM`, and `CLOUDFLARE_ACCOUNT_ID` in the Cloudflare dashboard. For private installs only, you may keep plaintext values under `vars` in your private `wrangler.jsonc`; do not commit personal values to a public fork.
+
+Set `ADMIN_PASSWORD`, `PRIMARY_DOMAIN`, and `CLOUDFLARE_API_TOKEN` before first setup. Only set the optional plaintext variables you need.
 
 ## Local Development
 
@@ -267,6 +264,9 @@ Edit `.dev.vars` only if you want local secrets. Do not commit it.
 ```dotenv
 # optional local secrets go here
 # ADMIN_PASSWORD=
+# CLOUDFLARE_API_TOKEN=
+
+# optional local plaintext variables go here
 # PRIMARY_DOMAIN=
 ```
 

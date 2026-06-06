@@ -2,7 +2,7 @@ import { normalizeDomain } from "./db";
 import { RuntimeEnv } from "./http";
 
 export type RuntimeRequirement = {
-  kind: "binding" | "secret";
+  kind: "binding" | "secret" | "variable";
   name: string;
   required: boolean;
   configured: boolean;
@@ -59,13 +59,13 @@ export function runtimeRequirements(env: RuntimeEnv, setupRequired: boolean): Ru
         : "Add the first admin password as a Worker secret named ADMIN_PASSWORD."
     },
     {
-      kind: "secret",
+      kind: "variable",
       name: "PRIMARY_DOMAIN",
       required: true,
       configured: Boolean(configuredPrimaryDomain(env)),
       message: configuredPrimaryDomain(env)
-        ? "Primary domain secret is configured."
-        : "Add the first managed email domain as a Worker secret named PRIMARY_DOMAIN."
+        ? "Primary domain variable is configured."
+        : "Add the first managed email domain as a Worker variable named PRIMARY_DOMAIN."
     },
     {
       kind: "secret",
@@ -77,39 +77,39 @@ export function runtimeRequirements(env: RuntimeEnv, setupRequired: boolean): Ru
         : "Add CLOUDFLARE_API_TOKEN to enable Cloudflare sync and routing automation."
     },
     {
-      kind: "secret",
+      kind: "variable",
       name: "WORKER_SCRIPT_NAME",
       required: false,
       configured: Boolean(env.WORKER_SCRIPT_NAME),
       message: env.WORKER_SCRIPT_NAME
-        ? "Worker script name secret is configured."
-        : "Optional: add the deployed Worker script name for routing rule automation."
+        ? "Worker script name variable is configured."
+        : "Optional: add the deployed Worker script name as WORKER_SCRIPT_NAME."
     },
     {
-      kind: "secret",
+      kind: "variable",
       name: "MANAGEMENT_HOST",
       required: false,
       configured: Boolean(env.MANAGEMENT_HOST),
       message: env.MANAGEMENT_HOST
-        ? "Custom management host secret is configured."
+        ? "Custom management host variable is configured."
         : "Optional: add this only when using a custom dashboard hostname."
     },
     {
-      kind: "secret",
+      kind: "variable",
       name: "PASSWORD_RESET_FROM",
       required: false,
       configured: Boolean(env.PASSWORD_RESET_FROM),
       message: env.PASSWORD_RESET_FROM
-        ? "Password reset sender secret is configured."
+        ? "Password reset sender variable is configured."
         : "Optional: add a verified sender address for password reset emails."
     },
     {
-      kind: "secret",
+      kind: "variable",
       name: "CLOUDFLARE_ACCOUNT_ID",
       required: false,
       configured: Boolean(env.CLOUDFLARE_ACCOUNT_ID),
       message: env.CLOUDFLARE_ACCOUNT_ID
-        ? "Cloudflare account id secret is configured."
+        ? "Cloudflare account id variable is configured."
         : "Optional: add this only if your API token can access multiple accounts."
     }
   ];

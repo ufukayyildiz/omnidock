@@ -100,7 +100,7 @@ export async function handleApi(
       const primaryDomainInput =
         optionalString(body, "primaryDomain", { max: 253 }) ?? configuredPrimaryDomain(env);
       if (!primaryDomainInput) {
-        throw new ApiError(409, "primary_domain_secret_missing", "Add PRIMARY_DOMAIN as a Worker secret first.");
+        throw new ApiError(409, "primary_domain_variable_missing", "Add PRIMARY_DOMAIN as a Worker variable first.");
       }
       const primaryDomain = normalizeDomain(primaryDomainInput);
       const recoveryEmail = requiredString(body, "recoveryEmail", { max: 320 });
