@@ -30,7 +30,7 @@ Recommended install flow:
 5. Deploy.
 6. Open the Worker URL and finish Emailfox setup inside the app.
 
-The first deploy should not ask for an Emailfox domain or `CLOUDFLARE_API_TOKEN`. Emailfox asks for the primary domain, admin details, recovery email, and password on the first login screen. Cloudflare automation tokens are advanced and can be added later.
+The first deploy should not ask for an Emailfox domain or `CLOUDFLARE_API_TOKEN`. Add Emailfox runtime settings as Cloudflare secrets after deploy.
 
 If Cloudflare's generic Git import screen skips the D1/R2 resource step, the build guard stops the deploy until those resources are configured.
 
@@ -101,8 +101,6 @@ Emailfox can be deployed without a runtime Cloudflare API token. In that mode, t
 
 Add `CLOUDFLARE_API_TOKEN` later only if you want Emailfox to call the Cloudflare API for zone inventory, Email Routing status, Email Sending status, catch-all setup, and mailbox routing rule creation.
 
-Cloudflare Workers Builds can create its own deploy token during the Deploy to Cloudflare flow. That dropdown token is only for building and deploying the Worker. It is not the same as Emailfox's optional runtime `CLOUDFLARE_API_TOKEN`.
-
 Recommended permissions:
 
 - Account > Account > Read
@@ -112,38 +110,31 @@ Recommended permissions:
 - Zone > Email Routing > Edit
 - Account > Workers Scripts > Read
 
-If your token can access exactly one Cloudflare account, Emailfox detects that account automatically. If your token can access multiple accounts, add `CLOUDFLARE_ACCOUNT_ID` later as an advanced non-secret Worker variable in your private installed copy.
+If your token can access exactly one Cloudflare account, Emailfox detects that account automatically. If it can access multiple accounts, add `CLOUDFLARE_ACCOUNT_ID` as a secret too.
 
-## Deploy Flow Inputs
+## Post-Deploy Secrets
 
-During one-click deploy, Cloudflare reads:
+After the first deploy, open:
 
-- `wrangler.jsonc` for Worker, D1, R2, and assets
-- `package.json` scripts and Cloudflare binding descriptions
+`Worker > Settings > Variables and Secrets > Add > Secret`
 
-The `API token` dropdown in Cloudflare's deploy screen is for Workers Builds, meaning the token Cloudflare uses to build and deploy this repository. Emailfox's optional runtime `CLOUDFLARE_API_TOKEN` is advanced and is intentionally not part of the one-click deploy form.
+Use secrets for every Emailfox runtime setting:
 
-You should only need to configure Cloudflare resources during deploy:
-
-| Value | Required | Notes |
+| Secret | Required | Notes |
 | --- | --- | --- |
-| D1 database name | Yes | Default is `emailfox-db`; Cloudflare can provision it. |
-| R2 bucket name | Yes | Cloudflare can provision it during deploy. |
+| `DOMAINS` | Recommended | Primary Emailfox domain, for example `example.com`. The first setup screen can also ask for this if unset. |
+| `CLOUDFLARE_API_TOKEN` | Optional | Enables Cloudflare sync, Email Sending status, Email Routing status, catch-all, and routing rule automation. |
+| `WORKER_SCRIPT_NAME` | Optional | Required only for automatic Email Routing rule creation. Set it to the deployed Worker script name. |
+| `MANAGEMENT_HOST` | Optional | Custom dashboard hostname such as `mail.example.com`. If unset, Emailfox uses the Worker URL. |
+| `PASSWORD_RESET_FROM` | Optional | Verified password reset sender. If unset, Emailfox uses `emailfox@<default-domain>`. |
+| `CLOUDFLARE_ACCOUNT_ID` | Optional | Only needed when `CLOUDFLARE_API_TOKEN` can access multiple Cloudflare accounts. |
+| `ADMIN_PASSWORD_BOOTSTRAP` | Legacy | Leave unset for normal installs. Use only for automation that intentionally skips the first setup screen. |
 
-Domain, admin name, recovery email, and password are configured later in Emailfox's first setup screen. No secrets are required during the first one-click deploy. Do not put real values in `wrangler.jsonc`, README files, screenshots, issues, or commits.
+Do not add these values as plaintext Worker variables. Keep them as secrets.
 
-Advanced/manual installs may also add non-secret Worker vars later:
+D1 and R2 are not secrets. They are Cloudflare bindings/resources and must stay in `wrangler.jsonc`.
 
-- `MANAGEMENT_HOST` for a custom dashboard hostname.
-- `PASSWORD_RESET_FROM` for a verified password reset sender. If omitted, Emailfox sends reset mail from `emailfox@<default-domain>`.
-- `CLOUDFLARE_ACCOUNT_ID` when one API token can access multiple Cloudflare accounts.
-- `WORKER_SCRIPT_NAME` when you want Emailfox to create Email Routing rules automatically. Set it to the deployed Worker script name.
-
-These advanced values are intentionally not part of the one-click deploy form.
-
-Advanced/manual installs may also add the `CLOUDFLARE_API_TOKEN` secret later to enable Cloudflare sync and routing automation.
-
-`database_id` is not a Worker secret, but it is account-specific. The public template uses the placeholder `00000000-0000-0000-0000-000000000000` so the Deploy to Cloudflare resource step can replace it with the deployer's own generated D1 database id. Installed copies must keep that generated `database_id` for updates. For a private/manual deployment, add the deployer's own `database_id` locally or through the deploy platform configuration, never as a committed personal value.
+`database_id` is not a Worker secret, but it is account-specific. The public template uses the placeholder `00000000-0000-0000-0000-000000000000` so your fork or Cloudflare resource setup can replace it with your own generated D1 database id. Installed copies must keep that generated `database_id` for updates. For a private/manual deployment, add your own `database_id` locally or through the deploy platform configuration, never as a committed personal value.
 
 The deploy script runs:
 
@@ -153,11 +144,11 @@ npm run build && npm run db:migrate:remote && wrangler deploy
 
 `npm run build` first runs `tools/validate-deploy-config.mjs`. The build stops if the D1 `database_id` is still the placeholder UUID or if the R2 bucket binding is missing. Maintainers working on the public template can bypass only this local template check with `EMAILFOX_SKIP_CONFIG_CHECK=1 npm run build`.
 
-Cloudflare provisions the D1/R2 resources before running the configured deploy command in the one-click flow. The migration command then uses the binding name `DB`, which is important because deployers may rename the actual D1 database.
+Cloudflare provisions or connects D1/R2 before running the configured deploy command. The migration command then uses the binding name `DB`, which is important because deployers may rename the actual D1 database.
 
 Emailfox also performs a defensive schema check during setup and inbound email handling. If a deploy platform creates D1 but skips or interrupts the migration step, the Worker can complete the current schema on the existing `DB` binding and mark the bundled migrations as applied. It does not create a new D1 database.
 
-If the Cloudflare setup screen asks for commands, use:
+If the Cloudflare Git deploy screen asks for commands, use:
 
 - Build command: `npm run build`
 - Deploy command: `npm run deploy`
@@ -179,17 +170,15 @@ The public template intentionally does not include a personal custom domain in `
 
 To use your own management host, add a custom domain in Cloudflare Workers, then set:
 
-```jsonc
-"vars": {
-  "MANAGEMENT_HOST": "mail.example.com"
-}
+```bash
+npx wrangler secret put MANAGEMENT_HOST
 ```
 
 You can also keep `MANAGEMENT_HOST` blank and use the generated `workers.dev` URL.
 
 ## Manual Install
 
-Use this path if you do not want the one-click deploy flow.
+Use this path if you deploy from your own machine instead of Cloudflare Git deploy.
 
 Install dependencies:
 
@@ -222,46 +211,38 @@ If you created resources manually, update `wrangler.jsonc` with your D1 `databas
 ]
 ```
 
-For one-click deploy, leave these resource IDs out and let Cloudflare provision them.
-
-Optional advanced Cloudflare automation secret:
-
-```bash
-npx wrangler secret put CLOUDFLARE_API_TOKEN
-```
-
-Only set `CLOUDFLARE_API_TOKEN` if you want Emailfox to sync Cloudflare inventory or create Email Routing rules automatically. Only set `ADMIN_PASSWORD_BOOTSTRAP` if you intentionally want to skip the first-screen admin creation flow.
-
-Optionally edit non-secret vars in `wrangler.jsonc`:
-
-```jsonc
-"vars": {
-  "MANAGEMENT_HOST": "mail.example.com",
-  "PASSWORD_RESET_FROM": "no-reply@example.com",
-  "WORKER_SCRIPT_NAME": "emailfox"
-}
-```
-
-If your API token can access multiple Cloudflare accounts, also add `CLOUDFLARE_ACCOUNT_ID` as a non-secret Worker var in your private installed copy.
-
 Build, apply remote migrations, and deploy:
 
 ```bash
 npm run deploy
 ```
 
+Then set Emailfox runtime settings as secrets:
+
+```bash
+npx wrangler secret put DOMAINS
+npx wrangler secret put CLOUDFLARE_API_TOKEN
+npx wrangler secret put WORKER_SCRIPT_NAME
+npx wrangler secret put MANAGEMENT_HOST
+npx wrangler secret put PASSWORD_RESET_FROM
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+npx wrangler secret put ADMIN_PASSWORD_BOOTSTRAP
+```
+
+Only set the optional secrets you need. Only set `ADMIN_PASSWORD_BOOTSTRAP` if you intentionally want to skip the first-screen admin creation flow.
+
 ## Local Development
 
-Create `.dev.vars` only if you need local-only advanced values:
+Create `.dev.vars` only if you need local-only secret values:
 
 ```bash
 touch .dev.vars
 ```
 
-Edit `.dev.vars` only if you want local Cloudflare automation. Add the optional Cloudflare API token manually when needed.
+Edit `.dev.vars` only if you want local secrets. Do not commit it.
 
 ```dotenv
-# optional Cloudflare automation token goes here
+# optional local secrets go here
 ```
 
 Optional local-only values:
@@ -344,7 +325,7 @@ Before making your repository public:
 - Confirm `wrangler.jsonc` does not contain your personal account id, D1 id, or custom domain.
 - Confirm `.dev.vars` is not tracked.
 - Confirm docs/screenshots do not show private domains or real emails.
-- Confirm `README.md` deploy button points to the public repository URL.
+- Confirm the README uses the fork-first install flow and does not include a one-click deploy button.
 - Run `npm audit --audit-level=moderate`.
 - Run `npm run build`.
 
