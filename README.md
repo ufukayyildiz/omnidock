@@ -1,7 +1,5 @@
 # EmailFox
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ufukayyildiz/emailfox)
-
 Emailfox is a private, multi-domain email management panel for Cloudflare Workers, Cloudflare Email Sending, Cloudflare Email Routing, D1, and R2.
 
 It gives you a compact Linux-style webmail/support inbox for domains in your own Cloudflare account:
@@ -19,39 +17,31 @@ It gives you a compact Linux-style webmail/support inbox for domains in your own
 
 Emailfox is not an IMAP/POP3 server and does not replace a full mailbox provider. It is best for private support inboxes, project inboxes, catch-all workflows, and lightweight multi-domain email operations that already live on Cloudflare.
 
-## One-Click Deploy
+## Fork-First Deploy
 
-Click the button at the top of this README and follow Cloudflare's setup flow.
+Do not deploy Emailfox directly from the upstream repository. Fork it first, then deploy your own fork. That gives you a repository you control, keeps generated D1/R2 resource IDs in your copy, and makes future updates safer.
 
-Use the Deploy to Cloudflare button flow for first installs. Importing the Git repository manually from Workers & Pages may skip the resource wizard; in that case the build will stop until D1 and R2 are configured.
+Recommended install flow:
 
-Cloudflare's Deploy to Cloudflare flow will:
+1. Click `Fork` on GitHub and create your own copy of this repository.
+2. Open Cloudflare Workers & Pages.
+3. Create a Worker from Git and select your fork.
+4. In Cloudflare's deploy form, create or select the D1 database and R2 bucket.
+5. Deploy.
+6. Open the Worker URL and finish Emailfox setup inside the app.
 
-1. Clone this public repository into your own GitHub or GitLab account.
-2. Let you choose the new repository name, Worker name, and resource names.
-3. Provision supported resources from `wrangler.jsonc`, including D1 and R2.
-4. Inject the generated resource IDs into the deployer's copied repository.
-5. Run the configured build/deploy command, including D1 migrations.
-6. Configure Workers Builds so future pushes can deploy automatically.
+The first deploy should not ask for an Emailfox domain or `CLOUDFLARE_API_TOKEN`. Emailfox asks for the primary domain, admin details, recovery email, and password on the first login screen. Cloudflare automation tokens are advanced and can be added later.
 
-This is not a normal GitHub fork requirement. Cloudflare creates a new repository copy in the deployer's Git provider account during the deploy flow.
+If Cloudflare's generic Git import screen skips the D1/R2 resource step, the build guard stops the deploy until those resources are configured.
 
 ## Updating an Existing Install
 
-Do not click the Deploy to Cloudflare button again to update an existing Emailfox install. That button starts a new install flow and can create a new Worker, D1 database, and R2 bucket.
-
-For updates, use the repository that Cloudflare created in your own GitHub or GitLab account during the first deploy. Pull or merge Emailfox updates into that copied repository, keep the generated `database_id` and `bucket_name` values in its `wrangler.jsonc`, then let Workers Builds run `npm run deploy`.
+For updates, use your fork. Pull or merge Emailfox upstream updates into that fork, keep the generated `database_id` and `bucket_name` values in its `wrangler.jsonc`, then let Workers Builds run `npm run deploy`.
 
 The deploy script does not create databases. It runs pending migrations against the existing `DB` binding and then deploys the Worker:
 
 ```bash
 npm run build && npm run db:migrate:remote && wrangler deploy
-```
-
-If you move this project to another GitHub organization or repository name, update the button URL:
-
-```md
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YOUR_ORG/YOUR_REPO)
 ```
 
 ## 0. Prepare Cloudflare First
@@ -262,10 +252,10 @@ npm run deploy
 
 ## Local Development
 
-Create `.dev.vars` from the example:
+Create `.dev.vars` only if you need local-only advanced values:
 
 ```bash
-cp .dev.vars.example .dev.vars
+touch .dev.vars
 ```
 
 Edit `.dev.vars` only if you want local Cloudflare automation. Add the optional Cloudflare API token manually when needed.
