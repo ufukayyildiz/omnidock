@@ -42,8 +42,10 @@ For updates, use your fork. Pull or merge Emailfox upstream updates into that fo
 The deploy script does not create databases or require account-specific ids:
 
 ```bash
-npm run build && wrangler deploy
+npm run build && node tools/deploy-preserving-bindings.mjs
 ```
+
+Wrangler treats its config file as the source of truth. A plain `wrangler deploy` can remove dashboard-added D1/R2 bindings if they are not present in the deploy config. Emailfox deploys through `tools/deploy-preserving-bindings.mjs`, which reads the existing Worker bindings and writes a temporary deploy config so `DB` and `MAIL_BUCKET` are not disconnected on updates. If it cannot read the existing bindings, it deploys in strict mode to avoid silently removing them.
 
 ## 0. Prepare Cloudflare First
 
@@ -143,12 +145,14 @@ The public template does not commit a personal D1 `database_id` or R2 bucket nam
 The deploy script runs:
 
 ```bash
-npm run build && wrangler deploy
+npm run build && node tools/deploy-preserving-bindings.mjs
 ```
 
 `npm run build` still runs `tools/validate-deploy-config.mjs`, but the public template check is warning-only. Missing runtime setup is handled by the app after deploy.
 
 Emailfox performs a defensive schema check during setup and inbound email handling. When the `DB` binding exists, the Worker can complete the current schema on that binding and mark the bundled migrations as applied. It does not create a new D1 database.
+
+For binding-safe deploys, make `CLOUDFLARE_API_TOKEN` available to the build/deploy command too. If the token can access multiple accounts, also set `CLOUDFLARE_ACCOUNT_ID`. Private installs may alternatively set `EMAILFOX_D1_DATABASE_ID` and `EMAILFOX_R2_BUCKET_NAME` as build variables.
 
 If the Cloudflare Git deploy screen asks for commands, use:
 
