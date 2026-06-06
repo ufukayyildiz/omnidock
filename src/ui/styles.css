@@ -12,7 +12,7 @@
   --titlebar: #e7ecea;
   --titlebar-strong: #d7dfdc;
   --control: #fbfcfc;
-  --control-hover: #ffffff;
+  --control-hover: #eef5f2;
   --line: #d9e1e7;
   --line-strong: #b9c6cf;
   --text: #17212b;
@@ -24,6 +24,10 @@
   --accent-soft: #d9f4ef;
   --selected: #d7efe9;
   --selected-line: #9fd7cb;
+  --hover-bg: #0b5f58;
+  --hover-line: #084c46;
+  --hover-text: #ffffff;
+  --primary-hover: #064d45;
   --warn: #b7791f;
   --warn-soft: #fff8e8;
   --warn-line: #f0d093;
@@ -31,8 +35,43 @@
   --focus-ring: rgba(15, 118, 110, 0.16);
   --shadow: 0 1px 2px rgba(19, 31, 36, 0.12), 0 12px 34px rgba(19, 31, 36, 0.08);
   --shadow-strong: 0 22px 80px rgba(19, 31, 36, 0.24);
-  --radius: 5px;
+  --radius: 3px;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+:root[data-palette="mint"] {
+  color-scheme: dark;
+  --desktop: #080c09;
+  --bg: #0b100d;
+  --panel: #111812;
+  --panel-alt: #0d1510;
+  --sidebar: #0b110d;
+  --titlebar: #121a14;
+  --titlebar-strong: #0a100c;
+  --control: #0f1711;
+  --control-hover: #17281c;
+  --line: #24402c;
+  --line-strong: #3f6f4b;
+  --text: #e9ffee;
+  --muted: #8fb89a;
+  --soft: #152218;
+  --accent: #22c55e;
+  --accent-strong: #86efac;
+  --accent-contrast: #031007;
+  --accent-soft: #12351e;
+  --selected: #123a21;
+  --selected-line: #2aa84f;
+  --hover-bg: #0f7a35;
+  --hover-line: #22c55e;
+  --hover-text: #ffffff;
+  --primary-hover: #095c28;
+  --warn: #f0d77a;
+  --warn-soft: #332a12;
+  --warn-line: #725f20;
+  --danger: #fb7185;
+  --focus-ring: rgba(34, 197, 94, 0.28);
+  --shadow: 0 1px 0 rgba(134, 239, 172, 0.08), 0 18px 50px rgba(0, 0, 0, 0.32);
+  --shadow-strong: 0 24px 90px rgba(0, 0, 0, 0.58);
 }
 
 :root[data-palette="ubuntu"] {
@@ -47,6 +86,9 @@
   --accent-soft: #fde7dc;
   --selected: #f8ded2;
   --selected-line: #efa27e;
+  --hover-bg: #8f2d12;
+  --hover-line: #e95420;
+  --primary-hover: #6f210d;
   --focus-ring: rgba(233, 84, 32, 0.18);
 }
 
@@ -62,6 +104,9 @@
   --accent-soft: #dce9fb;
   --selected: #dbe8f8;
   --selected-line: #9bb9df;
+  --hover-bg: #294172;
+  --hover-line: #3c6eb4;
+  --primary-hover: #20345c;
   --focus-ring: rgba(60, 110, 180, 0.18);
 }
 
@@ -77,6 +122,9 @@
   --accent-soft: #d8efff;
   --selected: #d7edf9;
   --selected-line: #91cceb;
+  --hover-bg: #0b5f9e;
+  --hover-line: #1d99f3;
+  --primary-hover: #084a7d;
   --focus-ring: rgba(29, 153, 243, 0.18);
 }
 
@@ -102,6 +150,10 @@
   --accent-soft: #343c44;
   --selected: #343b44;
   --selected-line: #697480;
+  --hover-bg: #4b5563;
+  --hover-line: #9aa4af;
+  --hover-text: #ffffff;
+  --primary-hover: #6b7280;
   --warn: #f0bf69;
   --warn-soft: #3a2f1e;
   --warn-line: #6e5325;
@@ -144,6 +196,8 @@ button {
 
 button:hover:not(:disabled) {
   background: var(--control-hover);
+  color: var(--text);
+  border-color: var(--line-strong);
 }
 
 .thread-row:hover,
@@ -154,6 +208,14 @@ button:hover:not(:disabled) {
 .settings-link:hover,
 .rule-row:hover {
   background: var(--panel-alt);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.nav-item:hover b,
+.settings-link:hover b,
+.domain-link:hover b {
+  color: var(--text);
 }
 
 .app-shell {
@@ -425,11 +487,16 @@ button:hover:not(:disabled) {
   font-weight: 700;
 }
 
-.palette-option.active,
-.palette-option:hover {
+.palette-option.active {
   border-color: var(--selected-line);
   background: var(--selected);
   color: var(--accent-strong);
+}
+
+.palette-option:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-bg);
+  color: var(--hover-text);
 }
 
 .palette-swatches {
@@ -437,14 +504,14 @@ button:hover:not(:disabled) {
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--panel-alt);
 }
 
 .palette-swatches i {
   width: 13px;
   height: 13px;
-  border-radius: 2px;
+  border-radius: 1px;
 }
 
 .button,
@@ -473,6 +540,12 @@ button:hover:not(:disabled) {
   color: var(--accent-contrast);
 }
 
+.button.primary:hover:not(:disabled) {
+  border-color: var(--hover-line);
+  background: linear-gradient(var(--primary-hover), var(--hover-bg));
+  color: var(--hover-text);
+}
+
 .button.ghost {
   border-color: var(--line);
   color: var(--muted);
@@ -483,6 +556,14 @@ button:hover:not(:disabled) {
   background: var(--panel-alt);
   color: var(--muted);
   box-shadow: none;
+}
+
+.button.ghost:hover:not(:disabled),
+.button.subtle:hover:not(:disabled),
+.icon-button:hover:not(:disabled) {
+  border-color: var(--hover-line);
+  background: var(--hover-bg);
+  color: var(--hover-text);
 }
 
 .button.mini {
@@ -510,6 +591,12 @@ button:hover:not(:disabled) {
 .icon-button.strong {
   border-color: var(--accent);
   color: var(--accent-strong);
+}
+
+.icon-button.strong:hover:not(:disabled) {
+  border-color: var(--hover-line);
+  background: var(--hover-bg);
+  color: var(--hover-text);
 }
 
 .button:disabled,
@@ -623,7 +710,7 @@ button:hover:not(:disabled) {
   min-height: 23px;
   padding: 0 7px;
   border: 1px solid #ead09f;
-  border-radius: 999px;
+  border-radius: var(--radius);
   color: var(--warn);
   background: var(--warn-soft);
   font-size: 11px;

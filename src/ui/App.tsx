@@ -71,7 +71,7 @@ const palettes: {
   label: string;
   swatches: [string, string, string];
 }[] = [
-  { key: "mint", label: "Mint", swatches: ["#78c2ad", "#1d6f61", "#e8f4ee"] },
+  { key: "mint", label: "Linux", swatches: ["#0b0f0c", "#22c55e", "#d7ffe2"] },
   { key: "ubuntu", label: "Ubuntu", swatches: ["#e95420", "#77216f", "#f6e9df"] },
   { key: "fedora", label: "Fedora", swatches: ["#3c6eb4", "#294172", "#e7eef9"] },
   { key: "plasma", label: "Plasma", swatches: ["#3daee9", "#1d5b86", "#edf7fc"] },
