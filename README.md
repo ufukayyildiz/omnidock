@@ -34,6 +34,18 @@ Cloudflare's Deploy to Cloudflare flow will:
 
 This is not a normal GitHub fork requirement. Cloudflare creates a new repository copy in the deployer's Git provider account during the deploy flow.
 
+## Updating an Existing Install
+
+Do not click the Deploy to Cloudflare button again to update an existing Emailfox install. That button starts a new install flow and can create a new Worker, D1 database, and R2 bucket.
+
+For updates, use the repository that Cloudflare created in your own GitHub or GitLab account during the first deploy. Pull or merge Emailfox updates into that copied repository, keep the generated `database_id` and `bucket_name` values in its `wrangler.jsonc`, then let Workers Builds run `npm run deploy`.
+
+The deploy script does not create databases. It runs pending migrations against the existing `DB` binding and then deploys the Worker:
+
+```bash
+npm run build && npm run db:migrate:remote && wrangler deploy
+```
+
 If you move this project to another GitHub organization or repository name, update the button URL:
 
 ```md

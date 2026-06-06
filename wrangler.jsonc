@@ -24,6 +24,8 @@
   "d1_databases": [
     {
       "binding": "DB",
+      // Public template: leave database_id out so first-time Deploy to Cloudflare can provision it.
+      // Installed copies should keep the generated database_id for updates.
       "database_name": "emailfox-db",
       "migrations_dir": "migrations"
     }
