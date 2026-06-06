@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "emailfox",
+  "name": "emailfox2",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-06-05",
   "compatibility_flags": ["nodejs_compat"],
