@@ -22,7 +22,7 @@ export function setupStatus(): Promise<SetupStatusPayload> {
 export function createAdmin(input: {
   name: string;
   email: string;
-  recoveryEmail: string | null;
+  recoveryEmail: string;
   primaryDomain: string;
   password: string;
 }): Promise<{ ok: true }> {

@@ -1,5 +1,6 @@
 import { ApiError, RuntimeEnv } from "./http";
 import { ensureDatabaseSchema } from "./schema";
+import { domainFromEmail, getDefaultDomain, normalizeDomain } from "./db";
 
 const encoder = new TextEncoder();
 const PASSWORD_ITERATIONS = 100_000;
@@ -49,7 +50,7 @@ export async function getSetupStatus(env: RuntimeEnv): Promise<SetupStatus> {
 
 export async function createAdminAccount(
   env: RuntimeEnv,
-  input: { name: string; email: string; recoveryEmail?: string | null; password: string }
+  input: { name: string; email: string; recoveryEmail: string; primaryDomain: string; password: string }
 ): Promise<void> {
   await ensureDatabaseSchema(env);
   const existing = await getAdminAuth(env);
@@ -59,7 +60,8 @@ export async function createAdminAccount(
 
   const name = normalizeAdminName(input.name);
   const email = normalizeAdminEmail(input.email);
-  const recoveryEmail = input.recoveryEmail ? normalizeAdminEmail(input.recoveryEmail) : email;
+  const recoveryEmail = normalizeAdminEmail(input.recoveryEmail);
+  validateExternalRecoveryEmail(recoveryEmail, input.primaryDomain);
   validatePassword(input.password);
 
   const salt = randomSalt();
@@ -283,9 +285,21 @@ function normalizeAdminEmail(value: string): string {
   return email;
 }
 
+function validateExternalRecoveryEmail(email: string, primaryDomainInput: string): void {
+  const primaryDomain = normalizeDomain(primaryDomainInput);
+  const recoveryDomain = domainFromEmail(email);
+  if (
+    recoveryDomain === primaryDomain ||
+    recoveryDomain.endsWith(`.${primaryDomain}`) ||
+    primaryDomain.endsWith(`.${recoveryDomain}`)
+  ) {
+    throw new ApiError(400, "recovery_email_not_external", "Recovery email must be outside the primary domain");
+  }
+}
+
 async function sendPasswordResetEmail(env: RuntimeEnv, record: AdminAuthRow, resetUrl: string): Promise<void> {
   const to = record.admin_email;
-  const from = env.PASSWORD_RESET_FROM?.trim() || to || "";
+  const from = env.PASSWORD_RESET_FROM?.trim() || (await defaultResetSender(env));
   if (!to || !from) {
     throw new ApiError(500, "reset_email_unconfigured", "Password reset sender is not configured");
   }
@@ -307,6 +321,11 @@ async function sendPasswordResetEmail(env: RuntimeEnv, record: AdminAuthRow, res
     text,
     html: `<p>Hello ${escapeHtml(name)},</p><p>Use this link to reset your Emailfox password:</p><p><a href="${escapeHtml(resetUrl)}">${escapeHtml(resetUrl)}</a></p><p>This link expires in 30 minutes.</p>`
   });
+}
+
+async function defaultResetSender(env: RuntimeEnv): Promise<string> {
+  const domain = await getDefaultDomain(env);
+  return domain ? `emailfox@${domain.domain}` : "";
 }
 
 function escapeHtml(value: string): string {

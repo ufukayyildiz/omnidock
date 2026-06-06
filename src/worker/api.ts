@@ -83,7 +83,7 @@ export async function handleApi(
         throw new ApiError(409, "setup_complete", "Admin account is already configured");
       }
       const primaryDomain = normalizeDomain(requiredString(body, "primaryDomain", { min: 3, max: 253 }));
-      const recoveryEmail = optionalString(body, "recoveryEmail", { max: 320 });
+      const recoveryEmail = requiredString(body, "recoveryEmail", { max: 320 });
       const domain = await upsertDomain(env, {
         domain: primaryDomain,
         source: "setup",
@@ -94,6 +94,7 @@ export async function handleApi(
         name: requiredString(body, "name", { min: 2, max: 160 }),
         email: requiredString(body, "email", { max: 320 }),
         recoveryEmail,
+        primaryDomain,
         password: requiredString(body, "password", { min: 12, max: 256 })
       });
       ctx.waitUntil(recordAudit(env, "admin.created", "primary", { primaryDomain }));

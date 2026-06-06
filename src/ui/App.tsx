@@ -650,7 +650,7 @@ function SetupScreen({
   onSubmit: (input: {
     name: string;
     email: string;
-    recoveryEmail: string | null;
+    recoveryEmail: string;
     primaryDomain: string;
     password: string;
   }) => Promise<void>;
@@ -675,11 +675,19 @@ function SetupScreen({
       setLocalError("Primary domain is required");
       return;
     }
+    if (!recoveryEmail.trim()) {
+      setLocalError("Recovery email is required");
+      return;
+    }
+    if (!isExternalRecoveryEmail(recoveryEmail, primaryDomain)) {
+      setLocalError("Recovery email must be outside the primary domain");
+      return;
+    }
     setLocalError(null);
     await onSubmit({
       name,
       email,
-      recoveryEmail: recoveryEmail.trim() || null,
+      recoveryEmail: recoveryEmail.trim(),
       primaryDomain,
       password
     });
@@ -735,7 +743,8 @@ function SetupScreen({
           type="email"
           value={recoveryEmail}
           onChange={(event) => setRecoveryEmail(event.target.value)}
-          placeholder={email || "admin@example.com"}
+          placeholder="you@gmail.com"
+          required
         />
         <label className="field-label" htmlFor="setup-primary-domain">
           Primary domain
@@ -778,6 +787,18 @@ function SetupScreen({
         </button>
       </form>
     </main>
+  );
+}
+
+function isExternalRecoveryEmail(email: string, primaryDomain: string): boolean {
+  const at = email.trim().lastIndexOf("@");
+  const recoveryDomain = at > 0 ? email.trim().slice(at + 1).toLowerCase().replace(/\.$/, "") : "";
+  const normalizedPrimary = primaryDomain.trim().toLowerCase().replace(/^@/, "").replace(/\.$/, "");
+  if (!recoveryDomain || !normalizedPrimary) return false;
+  return (
+    recoveryDomain !== normalizedPrimary &&
+    !recoveryDomain.endsWith(`.${normalizedPrimary}`) &&
+    !normalizedPrimary.endsWith(`.${recoveryDomain}`)
   );
 }
 
