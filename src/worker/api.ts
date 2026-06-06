@@ -612,7 +612,7 @@ function listAvailableBuckets(env: RuntimeEnv): BucketInfo[] {
       binding: "MAIL_BUCKET",
       configured,
       writable: configured,
-      description: "Emailfox raw messages, attachments, and manual files"
+      description: "OmniDock raw messages, attachments, and manual files"
     }
   ];
 }
@@ -690,8 +690,8 @@ async function seedDevelopmentData(env: RuntimeEnv): Promise<number> {
     fromName: "Client Ops",
     to: ["support@example.com"],
     subject: "Routing active check",
-    snippet: "Emailfox received this routed message and stored it in D1/R2.",
-    textBody: "Emailfox received this routed message and stored it in D1/R2.",
+    snippet: "OmniDock received this routed message and stored it in D1/R2.",
+    textBody: "OmniDock received this routed message and stored it in D1/R2.",
     receivedAt: new Date().toISOString()
   });
 

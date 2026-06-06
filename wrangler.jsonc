@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "emailfox",
+  "name": "omnidock",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-06-05",
   "compatibility_flags": ["nodejs_compat"],
@@ -13,8 +13,9 @@
     "binding": "ASSETS",
     "directory": "./dist/client"
   },
-  // D1/R2 bindings are added at build time when EMAILFOX_D1_DATABASE_ID and
-  // EMAILFOX_R2_BUCKET_NAME are configured. The public template intentionally
+  // D1/R2 bindings are added at build time when OMNIDOCK_D1_DATABASE_ID and
+  // OMNIDOCK_R2_BUCKET_NAME are configured. Legacy EMAILFOX_* names are
+  // still accepted by the helper scripts. The public template intentionally
   // avoids fake resource ids so first deploys do not fail.
   "send_email": [
     {

@@ -324,7 +324,7 @@ async function sendPasswordResetEmail(env: RuntimeEnv, record: AdminAuthRow, res
   const text = [
     `Hello ${name},`,
     "",
-    "Use this link to reset your Emailfox password:",
+    "Use this link to reset your OmniDock password:",
     resetUrl,
     "",
     "This link expires in 30 minutes."
@@ -333,15 +333,15 @@ async function sendPasswordResetEmail(env: RuntimeEnv, record: AdminAuthRow, res
   await env.EMAIL.send({
     from,
     to,
-    subject: "Emailfox password reset",
+    subject: "OmniDock password reset",
     text,
-    html: `<p>Hello ${escapeHtml(name)},</p><p>Use this link to reset your Emailfox password:</p><p><a href="${escapeHtml(resetUrl)}">${escapeHtml(resetUrl)}</a></p><p>This link expires in 30 minutes.</p>`
+    html: `<p>Hello ${escapeHtml(name)},</p><p>Use this link to reset your OmniDock password:</p><p><a href="${escapeHtml(resetUrl)}">${escapeHtml(resetUrl)}</a></p><p>This link expires in 30 minutes.</p>`
   });
 }
 
 async function defaultResetSender(env: RuntimeEnv): Promise<string> {
   const domain = await getDefaultDomain(env);
-  return domain ? `emailfox@${domain.domain}` : "";
+  return domain ? `omnidock@${domain.domain}` : "";
 }
 
 function escapeHtml(value: string): string {

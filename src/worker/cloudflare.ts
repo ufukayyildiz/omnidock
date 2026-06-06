@@ -140,7 +140,7 @@ export async function enableCatchAllForDomain(
   const result = await cfRequest<RoutingRule>(env, `/zones/${domain.zone_id}/email/routing/rules/catch_all`, {
     method: "PUT",
     body: JSON.stringify({
-      name: "Emailfox catch-all",
+      name: "OmniDock catch-all",
       enabled: true,
       matchers: [{ type: "all" }],
       actions: [{ type: "worker", value: [scriptName] }]
@@ -218,7 +218,7 @@ export async function enableRoutingForMailbox(
     (await cfRequest<RoutingRule>(env, `/zones/${domain.zone_id}/email/routing/rules`, {
       method: "POST",
       body: JSON.stringify({
-        name: `Emailfox ${mailbox.address}`,
+        name: `OmniDock ${mailbox.address}`,
         enabled: true,
         matchers: [{ type: "literal", field: "to", value: mailbox.address }],
         actions: [{ type: "worker", value: [scriptName] }]

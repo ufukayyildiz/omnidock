@@ -2,6 +2,7 @@ node_modules/
 dist/
 .wrangler/
 .wrangler.emailfox.generated.jsonc
+.wrangler.omnidock.generated.jsonc
 .dev.vars
 worker-configuration.d.ts
 *.log

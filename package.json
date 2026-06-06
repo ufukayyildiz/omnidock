@@ -1,5 +1,5 @@
 {
-  "name": "emailfox",
+  "name": "omnidock",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
   },
   "cloudflare": {
-    "label": "Emailfox",
+    "label": "OmniDock",
     "products": ["Workers", "D1", "R2"],
     "bindings": {
       "DB": {

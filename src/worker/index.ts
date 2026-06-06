@@ -31,7 +31,7 @@ export default {
       await receiveEmail(message, runtimeEnv);
     } catch (error) {
       console.error("Failed to receive email", error);
-      message.setReject("Emailfox could not accept this message");
+      message.setReject("OmniDock could not accept this message");
     }
   }
 } satisfies ExportedHandler<Env>;

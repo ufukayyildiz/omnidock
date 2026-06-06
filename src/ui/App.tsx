@@ -72,10 +72,14 @@ import {
   ThreadRow
 } from "./types";
 
-const PASSWORD_KEY = "emailfox.password";
-const PALETTE_KEY = "emailfox.palette";
-const DEFAULT_MAILBOX_KEY = "emailfox.defaultMailbox";
-const REFRESH_INTERVAL_KEY = "emailfox.refreshIntervalSeconds";
+const PASSWORD_KEY = "omnidock.password";
+const PALETTE_KEY = "omnidock.palette";
+const DEFAULT_MAILBOX_KEY = "omnidock.defaultMailbox";
+const REFRESH_INTERVAL_KEY = "omnidock.refreshIntervalSeconds";
+const LEGACY_PASSWORD_KEY = "emailfox.password";
+const LEGACY_PALETTE_KEY = "emailfox.palette";
+const LEGACY_DEFAULT_MAILBOX_KEY = "emailfox.defaultMailbox";
+const LEGACY_REFRESH_INTERVAL_KEY = "emailfox.refreshIntervalSeconds";
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 10;
 
 const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
@@ -183,19 +187,30 @@ const securityOptions: SelectOption[] = [
 ];
 
 function initialPalette(): PaletteKey {
-  const stored = localStorage.getItem(PALETTE_KEY);
+  const stored = readStoredValue("local", PALETTE_KEY, LEGACY_PALETTE_KEY);
   return palettes.some((palette) => palette.key === stored) ? (stored as PaletteKey) : "mint";
 }
 
 function initialRefreshIntervalSeconds(): number {
-  const stored = Number(localStorage.getItem(REFRESH_INTERVAL_KEY));
+  const stored = Number(readStoredValue("local", REFRESH_INTERVAL_KEY, LEGACY_REFRESH_INTERVAL_KEY));
   return Number.isFinite(stored) && stored >= 0 ? stored : DEFAULT_REFRESH_INTERVAL_SECONDS;
+}
+
+function readStoredValue(storage: "local" | "session", key: string, legacyKey?: string): string | null {
+  const target = storage === "local" ? localStorage : sessionStorage;
+  return target.getItem(key) ?? (legacyKey ? target.getItem(legacyKey) : null);
+}
+
+function removeStoredValue(storage: "local" | "session", key: string, legacyKey?: string): void {
+  const target = storage === "local" ? localStorage : sessionStorage;
+  target.removeItem(key);
+  if (legacyKey) target.removeItem(legacyKey);
 }
 
 export function App() {
   const initialResetToken = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
   const [palette, setPalette] = useState<PaletteKey>(initialPalette);
-  const [password, setPassword] = useState(() => sessionStorage.getItem(PASSWORD_KEY) ?? "");
+  const [password, setPassword] = useState(() => readStoredValue("session", PASSWORD_KEY, LEGACY_PASSWORD_KEY) ?? "");
   const [draftPassword, setDraftPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
@@ -208,7 +223,7 @@ export function App() {
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
   const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(null);
   const [selectedBucketId, setSelectedBucketId] = useState<string | null>(null);
-  const [defaultMailboxId, setDefaultMailboxId] = useState(() => localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "");
+  const [defaultMailboxId, setDefaultMailboxId] = useState(() => readStoredValue("local", DEFAULT_MAILBOX_KEY, LEGACY_DEFAULT_MAILBOX_KEY) ?? "");
   const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(initialRefreshIntervalSeconds);
   const [folderStats, setFolderStats] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
@@ -281,7 +296,7 @@ export function App() {
       setSelectedMailboxId((current) => {
         if (current && data.mailboxes.some((mailbox) => mailbox.id === current)) return current;
 
-        const storedDefaultId = localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "";
+        const storedDefaultId = readStoredValue("local", DEFAULT_MAILBOX_KEY, LEGACY_DEFAULT_MAILBOX_KEY) ?? "";
         const storedDefaultMailbox = data.mailboxes.find((mailbox) => mailbox.id === storedDefaultId);
         if (storedDefaultMailbox) {
           setDefaultMailboxId(storedDefaultMailbox.id);
@@ -289,7 +304,7 @@ export function App() {
         }
 
         if (storedDefaultId) {
-          localStorage.removeItem(DEFAULT_MAILBOX_KEY);
+          removeStoredValue("local", DEFAULT_MAILBOX_KEY, LEGACY_DEFAULT_MAILBOX_KEY);
           setDefaultMailboxId("");
         }
 
@@ -304,7 +319,7 @@ export function App() {
     } catch (error) {
       const message = readError(error);
       if (isAuthError(error)) {
-        sessionStorage.removeItem(PASSWORD_KEY);
+        removeStoredValue("session", PASSWORD_KEY, LEGACY_PASSWORD_KEY);
         setPassword("");
         setAuthView("login");
         setLoginError(message);
@@ -417,7 +432,7 @@ export function App() {
     setBusy(true);
     try {
       await createAdmin(input);
-      sessionStorage.removeItem(PASSWORD_KEY);
+      removeStoredValue("session", PASSWORD_KEY, LEGACY_PASSWORD_KEY);
       setPassword("");
       setDraftPassword("");
       setAuthNotice("Setup complete. Log in with your password.");
@@ -475,7 +490,7 @@ export function App() {
   }
 
   function lock() {
-    sessionStorage.removeItem(PASSWORD_KEY);
+    removeStoredValue("session", PASSWORD_KEY, LEGACY_PASSWORD_KEY);
     setPassword("");
     setLoginError(null);
     setAuthNotice(null);
@@ -592,7 +607,7 @@ export function App() {
   const defaultMailbox = mailboxes.find((mailbox) => mailbox.id === defaultMailboxId) ?? null;
   const setDefaultMailboxPreference = () => {
     if (!activeMailbox) {
-      localStorage.removeItem(DEFAULT_MAILBOX_KEY);
+      removeStoredValue("local", DEFAULT_MAILBOX_KEY, LEGACY_DEFAULT_MAILBOX_KEY);
       setDefaultMailboxId("");
       setNotice("Default mailbox cleared");
       return;
@@ -796,7 +811,7 @@ export function App() {
       <footer className="statusbar">
         <span>
           <TerminalSquare size={13} />
-          emailfox
+          omnidock
         </span>
         <span>{activeDomain?.domain ?? `${domains.length} domains`}</span>
         <span>{view === "buckets" ? activeBucket?.name ?? "Buckets" : activeMailbox?.address ?? "All mailboxes"}</span>
@@ -849,9 +864,9 @@ function LoginScreen({
       </div>
       <form className="login-box" onSubmit={onSubmit}>
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -922,9 +937,9 @@ function ConfigurationScreen({
       </div>
       <section className="login-box configuration-box">
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -1054,9 +1069,9 @@ function SetupScreen({
       </div>
       <form className="login-box" onSubmit={submit}>
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -1208,9 +1223,9 @@ function ResetRequestScreen({
       </div>
       <form className="login-box" onSubmit={submit}>
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -1277,9 +1292,9 @@ function ResetConfirmScreen({
       </div>
       <form className="login-box" onSubmit={submit}>
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -1342,9 +1357,9 @@ function AuthStatusScreen({
       </div>
       <section className="login-box">
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -1381,9 +1396,9 @@ function AuthGate({
       </div>
       <section className="login-box">
         <div className="brand-block">
-          <img src="/emailfox-mark.svg" alt="" />
+          <img src="/omnidock-mark.svg" alt="" />
           <div>
-            <h1>Emailfox</h1>
+            <h1>OmniDock</h1>
             <p>{window.location.host || "Cloudflare Workers"}</p>
           </div>
         </div>
@@ -1625,9 +1640,9 @@ function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand-row">
-        <img src="/emailfox-mark.svg" alt="" />
+        <img src="/omnidock-mark.svg" alt="" />
         <div>
-          <strong>Emailfox</strong>
+          <strong>OmniDock</strong>
           <span>{managementHost}</span>
         </div>
       </div>
@@ -2397,7 +2412,7 @@ function SignaturesView({
               <StatusPill ok={signatureDraft.text.trim().length > 0} label={signatureDraft.text.trim() ? "Ready" : "Empty"} />
             </div>
 
-            <RichTextEditor value={signatureDraft} onChange={setSignatureDraft} placeholder="Best regards, Emailfox Team" />
+            <RichTextEditor value={signatureDraft} onChange={setSignatureDraft} placeholder="Best regards, OmniDock Team" />
 
             <section className="signature-preview-card">
               <header>

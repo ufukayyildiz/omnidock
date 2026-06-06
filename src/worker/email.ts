@@ -164,7 +164,7 @@ export async function sendEmail(env: RuntimeEnv, input: SendInput): Promise<Mess
     throw new ApiError(400, "sender_not_verified", "Sender domain is not marked as verified for Email Sending");
   }
   if (!mailboxRow || mailboxRow.enabled !== 1 || mailboxRow.domain_id !== domainRow.id) {
-    throw new ApiError(400, "sender_mailbox_not_enabled", "Sender mailbox is not enabled in Emailfox");
+    throw new ApiError(400, "sender_mailbox_not_enabled", "Sender mailbox is not enabled in OmniDock");
   }
 
   const to = normalizeAddressList(input.to);
