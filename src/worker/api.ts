@@ -1,4 +1,11 @@
-import { requireAdmin, setAdminPassword } from "./auth";
+import {
+  confirmAdminPasswordReset,
+  createAdminAccount,
+  getSetupStatus,
+  requestAdminPasswordReset,
+  requireAdmin,
+  setAdminPassword
+} from "./auth";
 import {
   createMailboxAndRoutingRule,
   enableCatchAllForDomain,
@@ -57,6 +64,41 @@ export async function handleApi(
 
     if (url.pathname === "/api/health") {
       return json({ ok: true, host: env.MANAGEMENT_HOST || url.host });
+    }
+
+    if (url.pathname === "/api/setup/status") {
+      if (request.method !== "GET") return methodNotAllowed();
+      return json({ ok: true, ...(await getSetupStatus(env)) });
+    }
+
+    if (url.pathname === "/api/setup") {
+      if (request.method !== "POST") return methodNotAllowed();
+      const body = await readJson(request);
+      await createAdminAccount(env, {
+        name: requiredString(body, "name", { min: 2, max: 160 }),
+        email: requiredString(body, "email", { max: 320 }),
+        password: requiredString(body, "password", { min: 12, max: 256 })
+      });
+      ctx.waitUntil(recordAudit(env, "admin.created", "primary", {}));
+      return json({ ok: true }, { status: 201 });
+    }
+
+    if (url.pathname === "/api/auth/reset/request") {
+      if (request.method !== "POST") return methodNotAllowed();
+      const body = await readJson(request);
+      await requestAdminPasswordReset(env, requiredString(body, "email", { max: 320 }), publicOrigin(request, env));
+      return json({ ok: true });
+    }
+
+    if (url.pathname === "/api/auth/reset/confirm") {
+      if (request.method !== "POST") return methodNotAllowed();
+      const body = await readJson(request);
+      await confirmAdminPasswordReset(env, {
+        token: requiredString(body, "token", { min: 24, max: 256 }),
+        password: requiredString(body, "password", { min: 12, max: 256 })
+      });
+      ctx.waitUntil(recordAudit(env, "admin.password_reset", "primary", {}));
+      return json({ ok: true });
     }
 
     await requireAdmin(request, env);
@@ -353,6 +395,20 @@ function readContactInput(
     notes: optionalString(body, "notes", { max: 2000 }),
     source
   };
+}
+
+function publicOrigin(request: Request, env: RuntimeEnv): string {
+  const url = new URL(request.url);
+  const managementHost = env.MANAGEMENT_HOST?.trim();
+  if (
+    managementHost &&
+    url.hostname !== "localhost" &&
+    url.hostname !== "127.0.0.1" &&
+    !url.hostname.endsWith(".workers.dev")
+  ) {
+    return `https://${managementHost}`;
+  }
+  return url.origin;
 }
 
 function readContactList(

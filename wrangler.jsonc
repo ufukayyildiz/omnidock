@@ -17,6 +17,8 @@
     "MANAGEMENT_HOST": "",
     // Optional. Leave empty when the API token can access exactly one Cloudflare account.
     "CLOUDFLARE_ACCOUNT_ID": "",
+    // Optional. Verified sender address for password reset emails. Defaults to the admin email.
+    "PASSWORD_RESET_FROM": "",
     "WORKER_SCRIPT_NAME": "emailfox"
   },
   "d1_databases": [

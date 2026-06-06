@@ -106,6 +106,12 @@ export type BootstrapPayload = {
   threads: ThreadRow[];
 };
 
+export type SetupStatusPayload = {
+  ok: true;
+  setupRequired: boolean;
+  resetAvailable: boolean;
+};
+
 export type ThreadPayload = {
   ok: true;
   messages: MessageRow[];

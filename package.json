@@ -16,7 +16,7 @@
   "cloudflare": {
     "bindings": {
       "ADMIN_PASSWORD_BOOTSTRAP": {
-        "description": "Initial admin password used once to bootstrap the D1 password hash. Use a long random value; you can change it in Emailfox after login."
+        "description": "Optional legacy bootstrap password. Leave blank for normal installs; Emailfox will create the first admin from the web setup screen."
       },
       "CLOUDFLARE_API_TOKEN": {
         "description": "Cloudflare API token used for inventory sync and Email Routing rule management. Recommended scopes: Account Read, Zone Read, Email Routing Read/Edit, Email Sending Read, Workers Scripts Read."
@@ -26,6 +26,9 @@
       },
       "CLOUDFLARE_ACCOUNT_ID": {
         "description": "Optional Cloudflare account id. Leave blank if your API token can access exactly one Cloudflare account."
+      },
+      "PASSWORD_RESET_FROM": {
+        "description": "Optional verified sender address for password reset emails. If blank, Emailfox uses the admin email address."
       }
     }
   },

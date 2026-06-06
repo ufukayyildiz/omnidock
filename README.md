@@ -74,19 +74,17 @@ For inbound mail, you will later choose one of these routing modes in Emailfox:
 
 Mailbox rules are safer for most setups. Catch-all is powerful, but it also receives misspelled and unknown addresses.
 
-### Admin Password
+### First Admin Account
 
-Prepare a long random admin password. Use at least 16-24 characters.
+After the first deploy and D1 migration, open the Emailfox URL. If no admin account exists, Emailfox shows the setup screen and asks for:
 
-Example generator:
+- Name
+- Email
+- Password
 
-```bash
-openssl rand -base64 32
-```
+The password is stored only as a salted PBKDF2 hash in D1.
 
-You will set this as `ADMIN_PASSWORD_BOOTSTRAP`.
-
-Emailfox uses this once to create a salted PBKDF2 password hash in D1. After the first successful login, authentication happens against D1.
+`ADMIN_PASSWORD_BOOTSTRAP` is optional and exists only for legacy or automated installs. Normal public deploys can leave it blank.
 
 ### Cloudflare API Token
 
@@ -115,10 +113,11 @@ You will be asked to configure:
 
 | Value | Required | Notes |
 | --- | --- | --- |
-| `ADMIN_PASSWORD_BOOTSTRAP` | Yes | Initial admin password. Use a long random value. |
 | `CLOUDFLARE_API_TOKEN` | Yes | Used for Cloudflare sync and routing rule creation. |
+| `ADMIN_PASSWORD_BOOTSTRAP` | No | Legacy/automation fallback. Leave blank for normal first-screen admin creation. |
 | `MANAGEMENT_HOST` | No | Leave blank for the generated `workers.dev` host. Set later for a custom domain. |
 | `CLOUDFLARE_ACCOUNT_ID` | No | Leave blank unless the API token can access multiple accounts. |
+| `PASSWORD_RESET_FROM` | No | Verified sender for password reset emails. If blank, Emailfox uses the admin email. |
 | D1 database name | Yes | Default is `emailfox-db`; Cloudflare can provision it. |
 | R2 bucket name | Yes | Cloudflare can provision it during deploy. |
 
@@ -126,13 +125,14 @@ Every deployer must provide their own secrets in Cloudflare during setup. Do not
 
 Use Cloudflare secrets for:
 
-- `ADMIN_PASSWORD_BOOTSTRAP`
 - `CLOUDFLARE_API_TOKEN`
+- `ADMIN_PASSWORD_BOOTSTRAP`, only if you intentionally use the legacy bootstrap path
 
 Use plain Worker vars only for non-secret values:
 
 - `MANAGEMENT_HOST`
 - `CLOUDFLARE_ACCOUNT_ID`
+- `PASSWORD_RESET_FROM`
 - `WORKER_SCRIPT_NAME`
 
 `database_id` is not a Worker secret. Wrangler needs it as D1 binding configuration for remote deploy/migration commands. For the public template, leave it out so one-click deploy can provision the deployer's own D1 database. For a private/manual deployment, add the deployer's own `database_id` locally or through the deploy platform configuration, never as a committed personal value.
@@ -216,9 +216,10 @@ For one-click deploy, leave these resource IDs out and let Cloudflare provision 
 Set secrets:
 
 ```bash
-npx wrangler secret put ADMIN_PASSWORD_BOOTSTRAP
 npx wrangler secret put CLOUDFLARE_API_TOKEN
 ```
+
+Only set `ADMIN_PASSWORD_BOOTSTRAP` if you intentionally want to skip the first-screen admin creation flow.
 
 Optionally edit non-secret vars in `wrangler.jsonc`:
 
@@ -226,6 +227,7 @@ Optionally edit non-secret vars in `wrangler.jsonc`:
 "vars": {
   "MANAGEMENT_HOST": "mail.example.com",
   "CLOUDFLARE_ACCOUNT_ID": "your-account-id",
+  "PASSWORD_RESET_FROM": "no-reply@example.com",
   "WORKER_SCRIPT_NAME": "emailfox"
 }
 ```
@@ -253,8 +255,9 @@ cp .dev.vars.example .dev.vars
 Edit `.dev.vars`:
 
 ```dotenv
-ADMIN_PASSWORD_BOOTSTRAP=replace-with-a-long-random-password
 CLOUDFLARE_API_TOKEN=replace-with-a-cloudflare-api-token
+PASSWORD_RESET_FROM=no-reply@example.com
+ADMIN_PASSWORD_BOOTSTRAP=
 ```
 
 If you want local sample data, add this only to your local `.dev.vars`:
@@ -306,7 +309,8 @@ The seed endpoint is disabled unless `ENABLE_DEV_SEED=true`.
 - Do not commit `.dev.vars`.
 - Do not commit real API tokens or admin passwords.
 - Use least-privilege Cloudflare API tokens.
-- Keep `ADMIN_PASSWORD_BOOTSTRAP` random and long.
+- Leave `ADMIN_PASSWORD_BOOTSTRAP` blank unless you intentionally use the legacy bootstrap path.
+- Password reset tokens are stored hashed in D1 and expire after 30 minutes.
 - Emailfox only sends from enabled D1 mailbox addresses on verified sending domains.
 - `sessionStorage` is used for the admin password in the browser session. For a larger public SaaS deployment, consider replacing this with HttpOnly session cookies and CSRF protection.
 - The default public template has no custom domain, account id, D1 id, or personal domain baked into source control.

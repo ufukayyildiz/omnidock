@@ -30,7 +30,15 @@ import {
   X
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ApiClient, AttachmentDraft, ContactInput } from "./api";
+import {
+  ApiClient,
+  AttachmentDraft,
+  ContactInput,
+  confirmPasswordReset,
+  createAdmin,
+  requestPasswordReset,
+  setupStatus
+} from "./api";
 import {
   AttachmentRow,
   BootstrapPayload,
@@ -39,6 +47,7 @@ import {
   FolderKey,
   MailboxRow,
   MailboxSignatureRow,
+  SetupStatusPayload,
   ThreadPayload,
   ThreadRow
 } from "./types";
@@ -55,6 +64,7 @@ const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
 type ViewKey = "mail" | "rules" | "contacts" | "signatures";
 type PaletteKey = "mint" | "ubuntu" | "fedora" | "plasma" | "graphite";
 type SettingsViewKey = Exclude<ViewKey, "mail">;
+type AuthViewKey = "checking" | "login" | "setup" | "reset-request" | "reset-confirm";
 
 const palettes: {
   key: PaletteKey;
@@ -77,10 +87,15 @@ function initialPalette(): PaletteKey {
 }
 
 export function App() {
+  const initialResetToken = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
   const [palette, setPalette] = useState<PaletteKey>(initialPalette);
   const [password, setPassword] = useState(() => sessionStorage.getItem(PASSWORD_KEY) ?? "");
   const [draftPassword, setDraftPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [authView, setAuthView] = useState<AuthViewKey>(initialResetToken ? "reset-confirm" : "checking");
+  const [resetToken, setResetToken] = useState(initialResetToken);
+  const [setup, setSetup] = useState<SetupStatusPayload | null>(null);
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
   const [folder, setFolder] = useState<FolderKey>("inbox");
   const [view, setView] = useState<ViewKey>("mail");
@@ -114,6 +129,24 @@ export function App() {
     setComposeOpen(false);
   }, []);
 
+  const loadSetupStatus = useCallback(async () => {
+    try {
+      const status = await setupStatus();
+      setSetup(status);
+      setLoginError(null);
+      if (status.setupRequired) {
+        setAuthView("setup");
+      } else if (resetToken) {
+        setAuthView("reset-confirm");
+      } else {
+        setAuthView("login");
+      }
+    } catch (error) {
+      setLoginError(readError(error));
+      setAuthView("login");
+    }
+  }, [resetToken]);
+
   const loadBootstrap = useCallback(async () => {
     if (!api) return;
     setBusy(true);
@@ -140,6 +173,7 @@ export function App() {
       const message = readError(error);
       sessionStorage.removeItem(PASSWORD_KEY);
       setPassword("");
+      setAuthView("login");
       setLoginError(message);
       setNotice(null);
       clearPrivateState();
@@ -147,6 +181,12 @@ export function App() {
       setBusy(false);
     }
   }, [api, clearPrivateState, password]);
+
+  useEffect(() => {
+    if (!password) {
+      void loadSetupStatus();
+    }
+  }, [loadSetupStatus, password]);
 
   const loadThreads = useCallback(async () => {
     if (!api) return;
@@ -205,24 +245,128 @@ export function App() {
     event.preventDefault();
     if (!draftPassword) return;
     setLoginError(null);
+    setAuthNotice(null);
     clearPrivateState();
     setPassword(draftPassword);
+  }
+
+  async function submitSetup(input: { name: string; email: string; password: string }) {
+    setBusy(true);
+    try {
+      await createAdmin(input);
+      sessionStorage.setItem(PASSWORD_KEY, input.password);
+      setPassword(input.password);
+      setDraftPassword("");
+      setAuthNotice(null);
+      setLoginError(null);
+      await loadSetupStatus();
+    } catch (error) {
+      setLoginError(readError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitResetRequest(email: string) {
+    setBusy(true);
+    try {
+      await requestPasswordReset(email);
+      setAuthNotice("If the email matches the admin account, a reset link has been sent.");
+      setLoginError(null);
+      setAuthView("login");
+    } catch (error) {
+      setLoginError(readError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitResetConfirm(input: { password: string }) {
+    if (!resetToken) return;
+    setBusy(true);
+    try {
+      await confirmPasswordReset({ token: resetToken, password: input.password });
+      window.history.replaceState(null, "", window.location.pathname);
+      setResetToken("");
+      setDraftPassword("");
+      setAuthNotice("Password updated. Log in with the new password.");
+      setLoginError(null);
+      setAuthView("login");
+      await loadSetupStatus();
+    } catch (error) {
+      setLoginError(readError(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function lock() {
     sessionStorage.removeItem(PASSWORD_KEY);
     setPassword("");
     setLoginError(null);
+    setAuthNotice(null);
     clearPrivateState();
+    setAuthView(setup?.setupRequired ? "setup" : "login");
   }
 
   if (!password) {
+    if (authView === "checking") {
+      return <AuthStatusScreen error={loginError} palette={palette} onPaletteChange={setPalette} />;
+    }
+
+    if (authView === "setup") {
+      return (
+        <SetupScreen
+          busy={busy}
+          error={loginError}
+          onSubmit={submitSetup}
+          palette={palette}
+          onPaletteChange={setPalette}
+        />
+      );
+    }
+
+    if (authView === "reset-request") {
+      return (
+        <ResetRequestScreen
+          busy={busy}
+          error={loginError}
+          onBack={() => {
+            setLoginError(null);
+            setAuthView("login");
+          }}
+          onSubmit={submitResetRequest}
+          palette={palette}
+          onPaletteChange={setPalette}
+        />
+      );
+    }
+
+    if (authView === "reset-confirm") {
+      return (
+        <ResetConfirmScreen
+          busy={busy}
+          error={loginError}
+          onSubmit={submitResetConfirm}
+          palette={palette}
+          onPaletteChange={setPalette}
+        />
+      );
+    }
+
     return (
       <LoginScreen
         draftPassword={draftPassword}
         setDraftPassword={setDraftPassword}
         error={loginError}
+        notice={authNotice}
         onSubmit={unlock}
+        resetAvailable={Boolean(setup?.resetAvailable)}
+        onForgot={() => {
+          setLoginError(null);
+          setAuthNotice(null);
+          setAuthView("reset-request");
+        }}
         palette={palette}
         onPaletteChange={setPalette}
       />
@@ -398,14 +542,20 @@ function LoginScreen({
   draftPassword,
   setDraftPassword,
   error,
+  notice,
   onSubmit,
+  resetAvailable,
+  onForgot,
   palette,
   onPaletteChange
 }: {
   draftPassword: string;
   setDraftPassword: (value: string) => void;
   error: string | null;
+  notice: string | null;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  resetAvailable: boolean;
+  onForgot: () => void;
   palette: PaletteKey;
   onPaletteChange: (palette: PaletteKey) => void;
 }) {
@@ -428,6 +578,12 @@ function LoginScreen({
             <span>{error}</span>
           </div>
         ) : null}
+        {notice ? (
+          <div className="auth-check">
+            <ShieldCheck size={15} />
+            <span>{notice}</span>
+          </div>
+        ) : null}
         <label className="field-label" htmlFor="password">
           Password
         </label>
@@ -443,7 +599,289 @@ function LoginScreen({
           <TerminalSquare size={16} />
           Unlock
         </button>
+        {resetAvailable ? (
+          <button className="button subtle wide" type="button" onClick={onForgot}>
+            Reset password
+          </button>
+        ) : null}
       </form>
+    </main>
+  );
+}
+
+function SetupScreen({
+  busy,
+  error,
+  onSubmit,
+  palette,
+  onPaletteChange
+}: {
+  busy: boolean;
+  error: string | null;
+  onSubmit: (input: { name: string; email: string; password: string }) => Promise<void>;
+  palette: PaletteKey;
+  onPaletteChange: (palette: PaletteKey) => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (password !== confirm) {
+      setLocalError("Passwords do not match");
+      return;
+    }
+    setLocalError(null);
+    await onSubmit({ name, email, password });
+  }
+
+  return (
+    <main className="login-shell">
+      <div className="login-tools">
+        <PaletteChooser value={palette} onChange={onPaletteChange} />
+      </div>
+      <form className="login-box" onSubmit={submit}>
+        <div className="brand-block">
+          <img src="/emailfox-mark.svg" alt="" />
+          <div>
+            <h1>Emailfox</h1>
+            <p>{window.location.host || "Cloudflare Workers"}</p>
+          </div>
+        </div>
+        {error || localError ? (
+          <div className="login-error">
+            <AlertTriangle size={15} />
+            <span>{localError ?? error}</span>
+          </div>
+        ) : null}
+        <label className="field-label" htmlFor="setup-name">
+          Name
+        </label>
+        <input
+          id="setup-name"
+          className="text-input"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          autoFocus
+          required
+        />
+        <label className="field-label" htmlFor="setup-email">
+          Email
+        </label>
+        <input
+          id="setup-email"
+          className="text-input"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+        />
+        <label className="field-label" htmlFor="setup-password">
+          Password
+        </label>
+        <input
+          id="setup-password"
+          className="text-input"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          minLength={12}
+          required
+        />
+        <label className="field-label" htmlFor="setup-confirm">
+          Confirm password
+        </label>
+        <input
+          id="setup-confirm"
+          className="text-input"
+          type="password"
+          value={confirm}
+          onChange={(event) => setConfirm(event.target.value)}
+          minLength={12}
+          required
+        />
+        <button className="button primary wide" type="submit" disabled={busy}>
+          <ShieldCheck size={16} />
+          Create admin
+        </button>
+      </form>
+    </main>
+  );
+}
+
+function ResetRequestScreen({
+  busy,
+  error,
+  onBack,
+  onSubmit,
+  palette,
+  onPaletteChange
+}: {
+  busy: boolean;
+  error: string | null;
+  onBack: () => void;
+  onSubmit: (email: string) => Promise<void>;
+  palette: PaletteKey;
+  onPaletteChange: (palette: PaletteKey) => void;
+}) {
+  const [email, setEmail] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSubmit(email);
+  }
+
+  return (
+    <main className="login-shell">
+      <div className="login-tools">
+        <PaletteChooser value={palette} onChange={onPaletteChange} />
+      </div>
+      <form className="login-box" onSubmit={submit}>
+        <div className="brand-block">
+          <img src="/emailfox-mark.svg" alt="" />
+          <div>
+            <h1>Emailfox</h1>
+            <p>{window.location.host || "Cloudflare Workers"}</p>
+          </div>
+        </div>
+        {error ? (
+          <div className="login-error">
+            <AlertTriangle size={15} />
+            <span>{error}</span>
+          </div>
+        ) : null}
+        <label className="field-label" htmlFor="reset-email">
+          Email
+        </label>
+        <input
+          id="reset-email"
+          className="text-input"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoFocus
+          required
+        />
+        <button className="button primary wide" type="submit" disabled={busy}>
+          Send reset link
+        </button>
+        <button className="button subtle wide" type="button" onClick={onBack}>
+          Back to login
+        </button>
+      </form>
+    </main>
+  );
+}
+
+function ResetConfirmScreen({
+  busy,
+  error,
+  onSubmit,
+  palette,
+  onPaletteChange
+}: {
+  busy: boolean;
+  error: string | null;
+  onSubmit: (input: { password: string }) => Promise<void>;
+  palette: PaletteKey;
+  onPaletteChange: (palette: PaletteKey) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (password !== confirm) {
+      setLocalError("Passwords do not match");
+      return;
+    }
+    setLocalError(null);
+    await onSubmit({ password });
+  }
+
+  return (
+    <main className="login-shell">
+      <div className="login-tools">
+        <PaletteChooser value={palette} onChange={onPaletteChange} />
+      </div>
+      <form className="login-box" onSubmit={submit}>
+        <div className="brand-block">
+          <img src="/emailfox-mark.svg" alt="" />
+          <div>
+            <h1>Emailfox</h1>
+            <p>{window.location.host || "Cloudflare Workers"}</p>
+          </div>
+        </div>
+        {error || localError ? (
+          <div className="login-error">
+            <AlertTriangle size={15} />
+            <span>{localError ?? error}</span>
+          </div>
+        ) : null}
+        <label className="field-label" htmlFor="reset-password">
+          New password
+        </label>
+        <input
+          id="reset-password"
+          className="text-input"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          minLength={12}
+          autoFocus
+          required
+        />
+        <label className="field-label" htmlFor="reset-confirm">
+          Confirm password
+        </label>
+        <input
+          id="reset-confirm"
+          className="text-input"
+          type="password"
+          value={confirm}
+          onChange={(event) => setConfirm(event.target.value)}
+          minLength={12}
+          required
+        />
+        <button className="button primary wide" type="submit" disabled={busy}>
+          Save password
+        </button>
+      </form>
+    </main>
+  );
+}
+
+function AuthStatusScreen({
+  error,
+  palette,
+  onPaletteChange
+}: {
+  error: string | null;
+  palette: PaletteKey;
+  onPaletteChange: (palette: PaletteKey) => void;
+}) {
+  return (
+    <main className="login-shell">
+      <div className="login-tools">
+        <PaletteChooser value={palette} onChange={onPaletteChange} />
+      </div>
+      <section className="login-box">
+        <div className="brand-block">
+          <img src="/emailfox-mark.svg" alt="" />
+          <div>
+            <h1>Emailfox</h1>
+            <p>{window.location.host || "Cloudflare Workers"}</p>
+          </div>
+        </div>
+        <div className={error ? "login-error" : "auth-check"}>
+          {error ? <AlertTriangle size={15} /> : <ShieldCheck size={15} />}
+          <span>{error ?? "Checking setup"}</span>
+        </div>
+      </section>
     </main>
   );
 }

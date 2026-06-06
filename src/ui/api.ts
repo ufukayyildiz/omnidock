@@ -1,4 +1,4 @@
-import { BootstrapPayload, ContactRow, DomainRow, ThreadPayload, ThreadRow } from "./types";
+import { BootstrapPayload, ContactRow, DomainRow, SetupStatusPayload, ThreadPayload, ThreadRow } from "./types";
 
 export type AttachmentDraft = {
   filename: string;
@@ -14,6 +14,31 @@ export type ContactInput = {
   tags?: string | null;
   notes?: string | null;
 };
+
+export function setupStatus(): Promise<SetupStatusPayload> {
+  return publicRequest<SetupStatusPayload>("/api/setup/status");
+}
+
+export function createAdmin(input: { name: string; email: string; password: string }): Promise<{ ok: true }> {
+  return publicRequest("/api/setup", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function requestPasswordReset(email: string): Promise<{ ok: true }> {
+  return publicRequest("/api/auth/reset/request", {
+    method: "POST",
+    body: JSON.stringify({ email })
+  });
+}
+
+export function confirmPasswordReset(input: { token: string; password: string }): Promise<{ ok: true }> {
+  return publicRequest("/api/auth/reset/confirm", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
 
 export class ApiClient {
   constructor(private readonly password: string) {}
@@ -150,4 +175,24 @@ export class ApiClient {
 
     return payload as T;
   }
+}
+
+async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(init.headers ?? {})
+    }
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { ok?: boolean; error?: { message?: string } }
+    | null;
+
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.error?.message ?? `Request failed with ${response.status}`);
+  }
+
+  return payload as T;
 }

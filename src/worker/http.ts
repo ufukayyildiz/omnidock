@@ -2,6 +2,7 @@ export type RuntimeEnv = Env & {
   ADMIN_PASSWORD_BOOTSTRAP?: string;
   CLOUDFLARE_API_TOKEN?: string;
   ENABLE_DEV_SEED?: string;
+  PASSWORD_RESET_FROM?: string;
 };
 
 export class ApiError extends Error {

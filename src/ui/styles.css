@@ -478,6 +478,13 @@ button:hover:not(:disabled) {
   color: var(--muted);
 }
 
+.button.subtle {
+  border-color: var(--line);
+  background: var(--panel-alt);
+  color: var(--muted);
+  box-shadow: none;
+}
+
 .button.mini {
   min-height: 26px;
   padding: 0 8px;
@@ -1332,7 +1339,9 @@ button:hover:not(:disabled) {
 .login-box {
   display: grid;
   gap: 13px;
-  width: min(360px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
   padding: 16px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);

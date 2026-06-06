@@ -1,2 +1,4 @@
-ADMIN_PASSWORD_BOOTSTRAP=change-me-long-random-password
 CLOUDFLARE_API_TOKEN=cloudflare-api-token-with-zone-email-permissions
+PASSWORD_RESET_FROM=
+# Optional legacy bootstrap path. Normal installs create the admin in the first web setup screen.
+ADMIN_PASSWORD_BOOTSTRAP=
