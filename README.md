@@ -17,6 +17,16 @@ It gives you a compact Linux-style webmail/support inbox for domains in your own
 
 Emailfox is not an IMAP/POP3 server and does not replace a full mailbox provider. It is best for private support inboxes, project inboxes, catch-all workflows, and lightweight multi-domain email operations that already live on Cloudflare.
 
+## Screenshots
+
+The default Linux palette is compact and terminal-like, with mailbox selection, inbox/sent/archive folders, Cloudflare sync, and compose controls on one screen.
+
+![Emailfox Linux inbox](docs/screenshots/emailfox-inbox-linux.png)
+
+Domain routing, catch-all, mailbox rules, contacts, and signatures live under Settings so the inbox stays focused.
+
+![Emailfox rules and domain settings](docs/screenshots/emailfox-rules-linux.png)
+
 ## Fork-First Deploy
 
 Do not deploy Emailfox directly from the upstream repository. Fork it first, then deploy your own fork. That gives you a repository you control and makes future updates safer.
@@ -139,6 +149,19 @@ D1 and R2 are not secrets. Add them as Cloudflare bindings/resources:
 | `DB` | D1 database |
 | `MAIL_BUCKET` | R2 bucket |
 | `EMAIL` | Cloudflare Email Sending binding |
+
+Bindings cannot be replaced by Worker secrets. The running Worker must receive `DB` as a D1 binding and `MAIL_BUCKET` as an R2 binding.
+
+For Git deploys, add these build/deploy variables or secrets too. Emailfox uses them only while deploying to generate a temporary Wrangler config with the same bindings, so updates do not disconnect dashboard-managed resources.
+
+| Name | Value to type | When to add |
+| --- | --- | --- |
+| `EMAILFOX_D1_DATABASE_ID` | Your D1 database id | Strongly recommended before every Git update deploy |
+| `EMAILFOX_D1_DATABASE_NAME` | Your D1 database name, for example `emailfox-db` | Optional, defaults to `emailfox-db` |
+| `EMAILFOX_R2_BUCKET_NAME` | Your R2 bucket name, for example `emailfox-mail` | Strongly recommended before every Git update deploy |
+| `EMAILFOX_ALLOW_UNBOUND_DEPLOY` | `1` | First deploy only, if you intentionally deploy before adding D1/R2 |
+
+If `EMAILFOX_D1_DATABASE_ID` and `EMAILFOX_R2_BUCKET_NAME` are missing, Emailfox tries to read the current Worker bindings from Cloudflare using `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` when those values are available to the build command. If it cannot preserve both `DB` and `MAIL_BUCKET` on an existing Worker, deploy stops before Wrangler can remove dashboard bindings.
 
 The public template does not commit a personal D1 `database_id` or R2 bucket name. If bindings are missing, Emailfox shows these exact names on the Worker URL instead of failing the build.
 
