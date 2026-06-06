@@ -93,11 +93,9 @@ The recovery email is the password reset recipient. Use an external address such
 
 The first password is read from the `ADMIN_PASSWORD` Worker secret and then stored as a salted PBKDF2 hash in D1.
 
-### Advanced Cloudflare Automation
+### Cloudflare Automation Token
 
-Emailfox can be deployed without a runtime Cloudflare API token. In that mode, the inbox, setup, D1, R2, contacts, signatures, sending from configured addresses, and manual domain management can still work.
-
-Add `CLOUDFLARE_API_TOKEN` later only if you want Emailfox to call the Cloudflare API for zone inventory, Email Routing status, Email Sending status, catch-all setup, and mailbox routing rule creation.
+Emailfox requires `CLOUDFLARE_API_TOKEN` before first setup so it can verify Cloudflare inventory, Email Routing status, Email Sending status, catch-all setup, and mailbox routing rule creation.
 
 Recommended permissions:
 
@@ -124,7 +122,7 @@ Cloudflare does not create empty secret rows from the repository. Add one row fo
 | --- | --- | --- |
 | `ADMIN_PASSWORD` | First admin password, at least 12 characters | Required before first setup |
 | `PRIMARY_DOMAIN` | Your first email domain, for example `example.com` | Required before first setup |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Add when you want Cloudflare sync/routing automation |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Required before first setup |
 | `WORKER_SCRIPT_NAME` | Deployed Worker script name, for example `emailfox` | Add when you want Emailfox to create Email Routing rules |
 | `MANAGEMENT_HOST` | Custom dashboard hostname, for example `mail.example.com` | Add only for a custom dashboard hostname |
 | `PASSWORD_RESET_FROM` | Verified reset sender, for example `no-reply@example.com` | Add only for a custom verified reset sender |
@@ -167,7 +165,7 @@ After deploy:
 4. Log in with the `ADMIN_PASSWORD` secret value.
 5. Create mailboxes such as `support`, `info`, or `billing`.
 6. Use `Settings > Rules` to route addresses to the Worker.
-7. Optional: add the advanced `CLOUDFLARE_API_TOKEN` secret, then click `Sync Cloudflare` to automate Cloudflare inventory and routing checks.
+7. Click `Sync Cloudflare` to refresh Cloudflare inventory and routing checks.
 
 ## Custom Domain
 
@@ -250,7 +248,7 @@ npx wrangler secret put PASSWORD_RESET_FROM
 npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-Set `ADMIN_PASSWORD` and `PRIMARY_DOMAIN` before first setup. Only set the optional secrets you need.
+Set `ADMIN_PASSWORD`, `PRIMARY_DOMAIN`, and `CLOUDFLARE_API_TOKEN` before first setup. Only set the optional secrets you need.
 
 ## Local Development
 

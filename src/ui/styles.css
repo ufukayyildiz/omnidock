@@ -1437,14 +1437,14 @@ button:hover:not(:disabled) {
 }
 
 .configuration-box {
-  width: min(760px, calc(100vw - 32px));
+  width: min(860px, calc(100vw - 32px));
 }
 
 .configuration-box .requirement-list {
   grid-template-columns: 1fr;
 }
 
-@media (min-width: 760px) {
+@media (min-width: 860px) {
   .configuration-box .requirement-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
