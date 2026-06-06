@@ -19,29 +19,30 @@ Emailfox is not an IMAP/POP3 server and does not replace a full mailbox provider
 
 ## Fork-First Deploy
 
-Do not deploy Emailfox directly from the upstream repository. Fork it first, then deploy your own fork. That gives you a repository you control, keeps generated D1/R2 resource IDs in your copy, and makes future updates safer.
+Do not deploy Emailfox directly from the upstream repository. Fork it first, then deploy your own fork. That gives you a repository you control and makes future updates safer.
 
 Recommended install flow:
 
 1. Click `Fork` on GitHub and create your own copy of this repository.
 2. Open Cloudflare Workers & Pages.
 3. Create a Worker from Git and select your fork.
-4. In Cloudflare's deploy form, create or select the D1 database and R2 bucket.
-5. Deploy.
-6. Open the Worker URL and finish Emailfox setup inside the app.
+4. Deploy the Worker.
+5. Open the Worker URL.
+6. If Emailfox shows missing Cloudflare setup, add the listed bindings and secrets in the Worker settings, then retry.
+7. Finish Emailfox setup inside the app.
 
-The first deploy should not ask for an Emailfox domain or `CLOUDFLARE_API_TOKEN`. Add Emailfox runtime settings as Cloudflare secrets after deploy.
+The first deploy should not fail because a public template has no personal D1 database id, R2 bucket id, domain, or API token. Add runtime settings after deploy in Cloudflare.
 
-If Cloudflare's generic Git import screen skips the D1/R2 resource step, the build guard stops the deploy until those resources are configured.
+If Cloudflare's Git import screen skips D1/R2 resource setup, Emailfox will still deploy and show the missing binding names on the Worker URL.
 
 ## Updating an Existing Install
 
-For updates, use your fork. Pull or merge Emailfox upstream updates into that fork, keep the generated `database_id` and `bucket_name` values in its `wrangler.jsonc`, then let Workers Builds run `npm run deploy`.
+For updates, use your fork. Pull or merge Emailfox upstream updates into that fork, keep your Worker bindings and secrets in Cloudflare, then let Workers Builds run `npm run deploy`.
 
-The deploy script does not create databases. It runs pending migrations against the existing `DB` binding and then deploys the Worker:
+The deploy script does not create databases or require account-specific ids:
 
 ```bash
-npm run build && npm run db:migrate:remote && wrangler deploy
+npm run build && wrangler deploy
 ```
 
 ## 0. Prepare Cloudflare First
@@ -81,17 +82,16 @@ Mailbox rules are safer for most setups. Catch-all is powerful, but it also rece
 
 ### First Admin Account
 
-After the first deploy and D1 migration, open the Emailfox URL. If no admin account exists, Emailfox shows the setup screen and asks for:
+After the first deploy, add the `ADMIN_PASSWORD` secret. If no admin account exists, Emailfox shows the setup screen and asks for:
 
 - Name
 - Email
 - Recovery email, required and outside the primary domain
 - Primary domain
-- Password
 
 The recovery email is the password reset recipient. Use an external address such as a Gmail, iCloud, Outlook, or company mailbox that is not under the primary Emailfox domain.
 
-The password is stored only as a salted PBKDF2 hash in D1.
+The first password is read from the `ADMIN_PASSWORD` Worker secret and then stored as a salted PBKDF2 hash in D1.
 
 ### Advanced Cloudflare Automation
 
@@ -122,7 +122,8 @@ Cloudflare does not create empty secret rows from the repository. Add one row fo
 
 | Name | Value to type | When to add |
 | --- | --- | --- |
-| `PRIMARY_DOMAIN` | Your first email domain, for example `example.com` | Add after deploy if you want setup prefilled |
+| `ADMIN_PASSWORD` | First admin password, at least 12 characters | Required before first setup |
+| `PRIMARY_DOMAIN` | Your first email domain, for example `example.com` | Required before first setup |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Add when you want Cloudflare sync/routing automation |
 | `WORKER_SCRIPT_NAME` | Deployed Worker script name, for example `emailfox` | Add when you want Emailfox to create Email Routing rules |
 | `MANAGEMENT_HOST` | Custom dashboard hostname, for example `mail.example.com` | Add only for a custom dashboard hostname |
@@ -131,21 +132,25 @@ Cloudflare does not create empty secret rows from the repository. Add one row fo
 
 Do not add these values as plaintext Worker variables. Keep them as secrets.
 
-D1 and R2 are not secrets. They are Cloudflare bindings/resources and must stay in `wrangler.jsonc`.
+D1 and R2 are not secrets. Add them as Cloudflare bindings/resources:
 
-`database_id` is not a Worker secret, but it is account-specific. The public template uses the placeholder `00000000-0000-0000-0000-000000000000` so your fork or Cloudflare resource setup can replace it with your own generated D1 database id. Installed copies must keep that generated `database_id` for updates. For a private/manual deployment, add your own `database_id` locally or through the deploy platform configuration, never as a committed personal value.
+| Binding name | Resource |
+| --- | --- |
+| `DB` | D1 database |
+| `MAIL_BUCKET` | R2 bucket |
+| `EMAIL` | Cloudflare Email Sending binding |
+
+The public template does not commit a personal D1 `database_id` or R2 bucket name. If bindings are missing, Emailfox shows these exact names on the Worker URL instead of failing the build.
 
 The deploy script runs:
 
 ```bash
-npm run build && npm run db:migrate:remote && wrangler deploy
+npm run build && wrangler deploy
 ```
 
-`npm run build` first runs `tools/validate-deploy-config.mjs`. The build stops if the D1 `database_id` is still the placeholder UUID or if the R2 bucket binding is missing. Maintainers working on the public template can bypass only this local template check with `EMAILFOX_SKIP_CONFIG_CHECK=1 npm run build`.
+`npm run build` still runs `tools/validate-deploy-config.mjs`, but the public template check is warning-only. Missing runtime setup is handled by the app after deploy.
 
-Cloudflare provisions or connects D1/R2 before running the configured deploy command. The migration command then uses the binding name `DB`, which is important because deployers may rename the actual D1 database.
-
-Emailfox also performs a defensive schema check during setup and inbound email handling. If a deploy platform creates D1 but skips or interrupts the migration step, the Worker can complete the current schema on the existing `DB` binding and mark the bundled migrations as applied. It does not create a new D1 database.
+Emailfox performs a defensive schema check during setup and inbound email handling. When the `DB` binding exists, the Worker can complete the current schema on that binding and mark the bundled migrations as applied. It does not create a new D1 database.
 
 If the Cloudflare Git deploy screen asks for commands, use:
 
@@ -157,11 +162,12 @@ If the Cloudflare Git deploy screen asks for commands, use:
 After deploy:
 
 1. Open the Worker URL shown by Cloudflare.
-2. Complete the setup screen with name, email, recovery email, primary domain, and password.
-3. Log in with the password you just created.
-4. Create mailboxes such as `support`, `info`, or `billing`.
-5. Use `Settings > Rules` to route addresses to the Worker.
-6. Optional: add the advanced `CLOUDFLARE_API_TOKEN` secret, then click `Sync Cloudflare` to automate Cloudflare inventory and routing checks.
+2. If Emailfox lists missing setup, add those binding/secret names in Cloudflare Worker settings.
+3. Complete the setup screen with name, email, recovery email, and primary domain.
+4. Log in with the `ADMIN_PASSWORD` secret value.
+5. Create mailboxes such as `support`, `info`, or `billing`.
+6. Use `Settings > Rules` to route addresses to the Worker.
+7. Optional: add the advanced `CLOUDFLARE_API_TOKEN` secret, then click `Sync Cloudflare` to automate Cloudflare inventory and routing checks.
 
 ## Custom Domain
 
@@ -192,7 +198,13 @@ npx wrangler d1 create emailfox-db
 npx wrangler r2 bucket create emailfox-mail
 ```
 
-If you created resources manually, update `wrangler.jsonc` with your D1 `database_id` and R2 `bucket_name`:
+For a dashboard-managed install, deploy first and add these bindings in Cloudflare:
+
+- `DB` -> the D1 database
+- `MAIL_BUCKET` -> the R2 bucket
+- `EMAIL` -> Cloudflare Email Sending
+
+For a private Wrangler-managed install, add your own D1 `database_id` and R2 `bucket_name` to your private fork's `wrangler.jsonc`:
 
 ```jsonc
 "d1_databases": [
@@ -210,10 +222,16 @@ If you created resources manually, update `wrangler.jsonc` with your D1 `databas
 ]
 ```
 
-Build, apply remote migrations, and deploy:
+Build and deploy:
 
 ```bash
 npm run deploy
+```
+
+If your private `wrangler.jsonc` contains the `DB` binding and you want to run migrations explicitly before deploy, use:
+
+```bash
+npm run deploy:with-migrations
 ```
 
 Then set Emailfox runtime settings in Cloudflare:
@@ -223,6 +241,7 @@ Then set Emailfox runtime settings in Cloudflare:
 Wrangler equivalent:
 
 ```bash
+npx wrangler secret put ADMIN_PASSWORD
 npx wrangler secret put PRIMARY_DOMAIN
 npx wrangler secret put CLOUDFLARE_API_TOKEN
 npx wrangler secret put WORKER_SCRIPT_NAME
@@ -231,7 +250,7 @@ npx wrangler secret put PASSWORD_RESET_FROM
 npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-Only set the optional secrets you need.
+Set `ADMIN_PASSWORD` and `PRIMARY_DOMAIN` before first setup. Only set the optional secrets you need.
 
 ## Local Development
 
@@ -245,6 +264,8 @@ Edit `.dev.vars` only if you want local secrets. Do not commit it.
 
 ```dotenv
 # optional local secrets go here
+# ADMIN_PASSWORD=
+# PRIMARY_DOMAIN=
 ```
 
 Optional local-only values:
