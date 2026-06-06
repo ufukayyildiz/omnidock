@@ -7,9 +7,12 @@ import {
   Circle,
   Copy,
   Download,
+  Eye,
+  FileText,
   FileUp,
   FolderGit2,
   Inbox,
+  Loader2,
   Mail,
   Palette,
   Paperclip,
@@ -24,6 +27,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Star,
   TerminalSquare,
   Trash2,
@@ -58,6 +62,8 @@ import {
 const PASSWORD_KEY = "emailfox.password";
 const PALETTE_KEY = "emailfox.palette";
 const DEFAULT_MAILBOX_KEY = "emailfox.defaultMailbox";
+const REFRESH_INTERVAL_KEY = "emailfox.refreshIntervalSeconds";
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 10;
 
 const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
   { key: "inbox", label: "Inbox", icon: Inbox },
@@ -65,7 +71,7 @@ const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
   { key: "archive", label: "Archive", icon: Archive }
 ];
 
-type ViewKey = "mail" | "rules" | "contacts" | "signatures";
+type ViewKey = "mail" | "rules" | "contacts" | "signatures" | "other-settings";
 type PaletteKey = "mint" | "ubuntu" | "fedora" | "plasma" | "graphite";
 type SettingsViewKey = Exclude<ViewKey, "mail">;
 type AuthViewKey = "checking" | "configuration" | "login" | "setup" | "reset-request" | "reset-confirm";
@@ -90,6 +96,11 @@ function initialPalette(): PaletteKey {
   return palettes.some((palette) => palette.key === stored) ? (stored as PaletteKey) : "mint";
 }
 
+function initialRefreshIntervalSeconds(): number {
+  const stored = Number(localStorage.getItem(REFRESH_INTERVAL_KEY));
+  return Number.isFinite(stored) && stored >= 0 ? stored : DEFAULT_REFRESH_INTERVAL_SECONDS;
+}
+
 export function App() {
   const initialResetToken = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
   const [palette, setPalette] = useState<PaletteKey>(initialPalette);
@@ -106,6 +117,7 @@ export function App() {
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
   const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(null);
   const [defaultMailboxId, setDefaultMailboxId] = useState(() => localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "");
+  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(initialRefreshIntervalSeconds);
   const [folderStats, setFolderStats] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
   const [threads, setThreads] = useState<ThreadRow[]>([]);
@@ -212,13 +224,18 @@ export function App() {
     }
   }, [loadSetupStatus, password]);
 
-  const loadThreads = useCallback(async () => {
+  const loadThreads = useCallback(async (options: { preserveSelection?: boolean } = {}) => {
     if (!api) return;
     try {
       const data = await api.threads(folder, selectedMailboxId, query);
       setThreads(data.threads);
       setFolderStats(data.stats);
-      setActiveThreadId(data.threads[0]?.thread_id ?? null);
+      setActiveThreadId((current) => {
+        if (options.preserveSelection && current && data.threads.some((item) => item.thread_id === current)) {
+          return current;
+        }
+        return data.threads[0]?.thread_id ?? null;
+      });
     } catch (error) {
       setNotice(readError(error));
     }
@@ -256,6 +273,21 @@ export function App() {
     }, 240);
     return () => window.clearTimeout(timeout);
   }, [api, bootstrap, query, selectedMailboxId, view, loadThreads]);
+
+  useEffect(() => {
+    localStorage.setItem(REFRESH_INTERVAL_KEY, String(refreshIntervalSeconds));
+  }, [refreshIntervalSeconds]);
+
+  useEffect(() => {
+    if (!api || !bootstrap || view !== "mail" || refreshIntervalSeconds <= 0) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadThreads({ preserveSelection: true });
+    }, refreshIntervalSeconds * 1000);
+
+    return () => window.clearInterval(interval);
+  }, [api, bootstrap, loadThreads, refreshIntervalSeconds, view]);
 
   useEffect(() => {
     if (activeThreadId) {
@@ -466,6 +498,10 @@ export function App() {
     setDefaultMailboxId(activeMailbox.id);
     setNotice(`Default mailbox set to ${activeMailbox.address}`);
   };
+  const changeRefreshIntervalSeconds = (value: number) => {
+    const nextValue = Number.isFinite(value) ? Math.round(value) : DEFAULT_REFRESH_INTERVAL_SECONDS;
+    setRefreshIntervalSeconds(Math.min(300, Math.max(0, nextValue)));
+  };
 
   async function handleThreadAction(action: "archive" | "unarchive" | "delete") {
     await loadBootstrap();
@@ -482,6 +518,7 @@ export function App() {
         folder={folder}
         view={view}
         selectedMailboxId={selectedMailboxId}
+        refreshIntervalSeconds={refreshIntervalSeconds}
         onMailboxChange={changeMailboxScope}
         onFolderChange={(nextFolder) => {
           setFolder(nextFolder);
@@ -602,6 +639,11 @@ export function App() {
             signatures={signatures}
             onChange={loadBootstrap}
             onNotice={setNotice}
+          />
+        ) : view === "other-settings" ? (
+          <OtherSettingsView
+            refreshIntervalSeconds={refreshIntervalSeconds}
+            onRefreshIntervalChange={changeRefreshIntervalSeconds}
           />
         ) : (
           <section className="main-grid">
@@ -1307,6 +1349,11 @@ function SettingsTitle({
       title: "Signatures",
       subtitle: "Mailbox based signatures",
       icon: PenLine
+    },
+    "other-settings": {
+      title: "Other Settings",
+      subtitle: "Refresh and interface",
+      icon: SlidersHorizontal
     }
   };
   const item = labels[view === "mail" ? "rules" : view];
@@ -1330,6 +1377,7 @@ function Sidebar({
   folder,
   view,
   selectedMailboxId,
+  refreshIntervalSeconds,
   onMailboxChange,
   onFolderChange,
   onSettingsOpen,
@@ -1341,6 +1389,7 @@ function Sidebar({
   folder: FolderKey;
   view: ViewKey;
   selectedMailboxId: string | null;
+  refreshIntervalSeconds: number;
   onMailboxChange: (id: string | null) => void;
   onFolderChange: (folder: FolderKey) => void;
   onSettingsOpen: (view: SettingsViewKey) => void;
@@ -1414,6 +1463,14 @@ function Sidebar({
           <PenLine size={16} />
           <span>Signatures</span>
           <b>{stats.mailboxes ?? 0}</b>
+        </button>
+        <button
+          className={view === "other-settings" ? "settings-link active" : "settings-link"}
+          onClick={() => onSettingsOpen("other-settings")}
+        >
+          <SlidersHorizontal size={16} />
+          <span>Other Settings</span>
+          <b>{refreshIntervalSeconds > 0 ? `${refreshIntervalSeconds}s` : "Off"}</b>
         </button>
       </div>
 
@@ -1993,6 +2050,60 @@ function SignaturesView({
   );
 }
 
+function OtherSettingsView({
+  refreshIntervalSeconds,
+  onRefreshIntervalChange
+}: {
+  refreshIntervalSeconds: number;
+  onRefreshIntervalChange: (seconds: number) => void;
+}) {
+  const presetValues = [0, 5, 10, 30, 60, 120];
+
+  return (
+    <section className="settings-shell">
+      <div className="other-settings-grid">
+        <section className="settings-card">
+          <header>
+            <div>
+              <span>Refresh</span>
+              <strong>{refreshIntervalSeconds > 0 ? `${refreshIntervalSeconds} seconds` : "Off"}</strong>
+            </div>
+            <RefreshCw size={18} />
+          </header>
+          <div className="setting-control">
+            <label>
+              Auto refresh
+              <div className="number-control">
+                <input
+                  type="number"
+                  min={0}
+                  max={300}
+                  step={1}
+                  value={refreshIntervalSeconds}
+                  onChange={(event) => onRefreshIntervalChange(Number(event.target.value))}
+                />
+                <span>seconds</span>
+              </div>
+            </label>
+            <div className="preset-row" aria-label="Refresh presets">
+              {presetValues.map((value) => (
+                <button
+                  className={refreshIntervalSeconds === value ? "button mini active" : "button mini"}
+                  key={value}
+                  type="button"
+                  onClick={() => onRefreshIntervalChange(value)}
+                >
+                  {value === 0 ? "Off" : `${value}s`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function ThreadList({
   threads,
   activeThreadId,
@@ -2064,8 +2175,10 @@ function ThreadDetail({
   const [replyText, setReplyText] = useState("");
   const [from, setFrom] = useState("");
   const [replyAttachments, setReplyAttachments] = useState<AttachmentDraft[]>([]);
+  const [replyAttachmentsLoading, setReplyAttachmentsLoading] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentRow | null>(null);
   const firstMessage = thread?.messages[0] ?? null;
   const lastInbound = [...(thread?.messages ?? [])].reverse().find((message) => message.direction === "inbound");
   const sendableMailboxes = useMemo(() => mailboxes.filter((mailbox) => mailbox.enabled === 1), [mailboxes]);
@@ -2082,7 +2195,9 @@ function ThreadDetail({
   useEffect(() => {
     setReplyText("");
     setReplyAttachments([]);
+    setReplyAttachmentsLoading(false);
     setReplyError(null);
+    setPreviewAttachment(null);
   }, [firstMessage?.thread_id]);
 
   if (!thread || !firstMessage) {
@@ -2096,7 +2211,16 @@ function ThreadDetail({
 
   async function submitReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!api || (!replyText.trim() && replyAttachments.length === 0) || !from || !lastInbound || !firstMessage) return;
+    if (
+      !api ||
+      replyAttachmentsLoading ||
+      (!replyText.trim() && replyAttachments.length === 0) ||
+      !from ||
+      !lastInbound ||
+      !firstMessage
+    ) {
+      return;
+    }
     setReplyError(null);
     setBusyAction("reply");
     try {
@@ -2188,9 +2312,9 @@ function ThreadDetail({
                       className="attachment-pill"
                       key={attachment.id}
                       type="button"
-                      onClick={() => void downloadAttachment(api, attachment)}
+                      onClick={() => setPreviewAttachment(attachment)}
                     >
-                      <Download size={13} />
+                      <Eye size={13} />
                       {attachment.filename}
                     </button>
                   ))}
@@ -2224,16 +2348,33 @@ function ThreadDetail({
           </div>
         ) : null}
         <textarea value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Reply" />
-        <AttachmentPicker value={replyAttachments} onChange={setReplyAttachments} />
+        <AttachmentPicker
+          value={replyAttachments}
+          onChange={setReplyAttachments}
+          onLoadingChange={setReplyAttachmentsLoading}
+          disabled={busyAction !== null}
+        />
         <button
           className="button primary send-button"
           type="submit"
-          disabled={busyAction !== null || (!replyText.trim() && replyAttachments.length === 0) || !from}
+          disabled={
+            busyAction !== null ||
+            replyAttachmentsLoading ||
+            (!replyText.trim() && replyAttachments.length === 0) ||
+            !from
+          }
         >
           <SendHorizontal size={16} />
-          {busyAction === "reply" ? "Sending" : "Send reply"}
+          {replyAttachmentsLoading ? "Loading attachments" : busyAction === "reply" ? "Sending" : "Send reply"}
         </button>
       </form>
+      {previewAttachment ? (
+        <AttachmentPreviewDialog
+          api={api}
+          attachment={previewAttachment}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -2262,6 +2403,7 @@ function ComposeDialog({
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -2273,7 +2415,7 @@ function ComposeDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!api || !from || !to.trim() || !subject.trim()) return;
+    if (!api || attachmentsLoading || !from || !to.trim() || !subject.trim()) return;
     setError(null);
     setBusy(true);
     try {
@@ -2340,28 +2482,169 @@ function ComposeDialog({
           <input value={subject} onChange={(event) => setSubject(event.target.value)} />
         </label>
         <textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Message" />
-        <AttachmentPicker value={attachments} onChange={setAttachments} />
-        <button className="button primary wide" type="submit" disabled={busy || !from || !to.trim() || !subject.trim()}>
+        <AttachmentPicker
+          value={attachments}
+          onChange={setAttachments}
+          onLoadingChange={setAttachmentsLoading}
+          disabled={busy}
+        />
+        <button
+          className="button primary wide"
+          type="submit"
+          disabled={busy || attachmentsLoading || !from || !to.trim() || !subject.trim()}
+        >
           <SendHorizontal size={16} />
-          {busy ? "Sending" : "Send"}
+          {attachmentsLoading ? "Loading attachments" : busy ? "Sending" : "Send"}
         </button>
       </form>
     </div>
   );
 }
 
+type AttachmentPreviewKind = "image" | "pdf" | "text" | "download";
+
+function AttachmentPreviewDialog({
+  api,
+  attachment,
+  onClose
+}: {
+  api: ApiClient | null;
+  attachment: AttachmentRow;
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<{
+    loading: boolean;
+    error: string | null;
+    kind: AttachmentPreviewKind;
+    url: string | null;
+    text: string | null;
+    blob: Blob | null;
+  }>({
+    loading: true,
+    error: null,
+    kind: "download",
+    url: null,
+    text: null,
+    blob: null
+  });
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    async function loadPreview() {
+      if (!api) {
+        setState((current) => ({ ...current, loading: false, error: "Preview is unavailable" }));
+        return;
+      }
+
+      setState({ loading: true, error: null, kind: "download", url: null, text: null, blob: null });
+
+      try {
+        const blob = await api.downloadAttachment(attachment.id);
+        objectUrl = URL.createObjectURL(blob);
+        const kind = detectAttachmentPreviewKind(attachment, blob);
+        const text = kind === "text" ? await blob.text() : null;
+
+        if (active) {
+          setState({ loading: false, error: null, kind, url: objectUrl, text, blob });
+        }
+      } catch (error) {
+        if (active) {
+          setState({ loading: false, error: readError(error), kind: "download", url: null, text: null, blob: null });
+        }
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [api, attachment]);
+
+  return (
+    <div className="modal-scrim preview-scrim" role="dialog" aria-modal="true">
+      <section className="attachment-preview-modal">
+        <header>
+          <div>
+            <span>Attachment preview</span>
+            <strong>{attachment.filename}</strong>
+            <small>
+              {attachment.content_type || "application/octet-stream"} · {formatBytes(attachment.size)}
+            </small>
+          </div>
+          <div className="preview-actions">
+            <button
+              className="button ghost"
+              type="button"
+              disabled={!state.blob}
+              onClick={() => {
+                if (state.blob) saveBlob(state.blob, attachment.filename);
+              }}
+            >
+              <Download size={15} />
+              Download
+            </button>
+            <button className="icon-button" type="button" onClick={onClose} title="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </header>
+
+        <div className="attachment-preview-body">
+          {state.loading ? (
+            <div className="preview-loading">
+              <Loader2 size={22} />
+              <span>Loading preview</span>
+            </div>
+          ) : state.error ? (
+            <div className="preview-fallback warn">
+              <AlertTriangle size={24} />
+              <strong>{state.error}</strong>
+            </div>
+          ) : state.kind === "image" && state.url ? (
+            <img className="image-preview" src={state.url} alt={attachment.filename} />
+          ) : state.kind === "pdf" && state.url ? (
+            <iframe className="pdf-preview" src={state.url} title={attachment.filename} />
+          ) : state.kind === "text" ? (
+            <pre className="text-preview">{state.text}</pre>
+          ) : (
+            <div className="preview-fallback">
+              <FileText size={28} />
+              <strong>{attachment.filename}</strong>
+              <span>{attachment.content_type || "No inline preview"}</span>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function AttachmentPicker({
   value,
-  onChange
+  onChange,
+  onLoadingChange,
+  disabled = false
 }: {
   value: AttachmentDraft[];
   onChange: (attachments: AttachmentDraft[]) => void;
+  onLoadingChange?: (loading: boolean) => void;
+  disabled?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
 
   async function addFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     setError(null);
+    setLoading(true);
 
     try {
       const next = [...value];
@@ -2383,15 +2666,25 @@ function AttachmentPicker({
       onChange(next);
     } catch (fileError) {
       setError(readError(fileError));
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
     <div className="attachment-picker">
-      <label className="attachment-add">
-        <Paperclip size={15} />
-        <span>Add attachment</span>
-        <input type="file" multiple onChange={(event) => void addFiles(event.target.files)} />
+      <label className={loading ? "attachment-add is-loading" : "attachment-add"}>
+        {loading ? <Loader2 size={15} /> : <Paperclip size={15} />}
+        <span>{loading ? "Loading attachments" : "Add attachment"}</span>
+        <input
+          type="file"
+          multiple
+          disabled={disabled || loading}
+          onChange={(event) => {
+            void addFiles(event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
       </label>
       {value.length > 0 ? (
         <div className="attachment-drafts">
@@ -2404,6 +2697,7 @@ function AttachmentPicker({
                 className="icon-button tiny"
                 type="button"
                 onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+                disabled={disabled || loading}
                 title="Remove attachment"
               >
                 <X size={12} />
@@ -2549,17 +2843,29 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-async function downloadAttachment(api: ApiClient | null, attachment: AttachmentRow): Promise<void> {
-  if (!api) return;
-  const blob = await api.downloadAttachment(attachment.id);
+function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = attachment.filename;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function detectAttachmentPreviewKind(attachment: AttachmentRow, blob: Blob): AttachmentPreviewKind {
+  const filename = attachment.filename.toLowerCase();
+  const contentType = (attachment.content_type || blob.type || "").toLowerCase();
+  const textExtensions = [".txt", ".md", ".csv", ".json", ".log", ".xml", ".html", ".css", ".js", ".ts", ".tsx", ".yml", ".yaml"];
+
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType === "application/pdf" || filename.endsWith(".pdf")) return "pdf";
+  if (blob.size <= 2 * 1024 * 1024 && (contentType.startsWith("text/") || textExtensions.some((ext) => filename.endsWith(ext)))) {
+    return "text";
+  }
+
+  return "download";
 }
 
 function formatBytes(value: number): string {
