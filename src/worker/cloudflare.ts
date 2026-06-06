@@ -127,6 +127,7 @@ export async function enableCatchAllForDomain(
   domainId: string
 ): Promise<{ ruleId: string | null }> {
   requireCloudflareConfig(env);
+  const scriptName = workerScriptName(env);
 
   const domain = await getDomainById(env, domainId);
   if (!domain) {
@@ -142,7 +143,7 @@ export async function enableCatchAllForDomain(
       name: "Emailfox catch-all",
       enabled: true,
       matchers: [{ type: "all" }],
-      actions: [{ type: "worker", value: [env.WORKER_SCRIPT_NAME] }]
+      actions: [{ type: "worker", value: [scriptName] }]
     })
   });
 
@@ -187,6 +188,7 @@ export async function enableRoutingForMailbox(
   mailboxId: string
 ): Promise<{ ruleId: string | null }> {
   requireCloudflareConfig(env);
+  const scriptName = workerScriptName(env);
 
   const mailbox = await getMailboxById(env, mailboxId);
   if (!mailbox) {
@@ -208,7 +210,7 @@ export async function enableRoutingForMailbox(
   const existing = findMailboxRule(
     await listRoutingRules(env, domain.zone_id).catch(() => []),
     mailbox.address,
-    env.WORKER_SCRIPT_NAME
+    scriptName
   );
 
   const rule =
@@ -219,7 +221,7 @@ export async function enableRoutingForMailbox(
         name: `Emailfox ${mailbox.address}`,
         enabled: true,
         matchers: [{ type: "literal", field: "to", value: mailbox.address }],
-        actions: [{ type: "worker", value: [env.WORKER_SCRIPT_NAME] }]
+        actions: [{ type: "worker", value: [scriptName] }]
       })
     }));
 
@@ -310,11 +312,24 @@ async function cfEnvelope<T>(
 
 function requireCloudflareConfig(env: RuntimeEnv): void {
   if (!env.CLOUDFLARE_API_TOKEN) {
-    throw new ApiError(500, "cloudflare_token_missing", "CLOUDFLARE_API_TOKEN secret is not configured");
+    throw new ApiError(
+      428,
+      "cloudflare_token_missing",
+      "Cloudflare automation is not configured. Add CLOUDFLARE_API_TOKEN as an advanced Worker secret to enable sync and routing rules."
+    );
   }
-  if (!env.WORKER_SCRIPT_NAME) {
-    throw new ApiError(500, "worker_name_missing", "WORKER_SCRIPT_NAME is not configured");
+}
+
+function workerScriptName(env: RuntimeEnv): string {
+  const scriptName = env.WORKER_SCRIPT_NAME?.trim();
+  if (!scriptName) {
+    throw new ApiError(
+      428,
+      "worker_name_missing",
+      "Routing automation needs WORKER_SCRIPT_NAME. Add it as an advanced Worker variable with the deployed Worker script name."
+    );
   }
+  return scriptName;
 }
 
 async function resolveAccountId(env: RuntimeEnv): Promise<string> {

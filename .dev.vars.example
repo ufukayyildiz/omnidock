@@ -1,2 +1,2 @@
-# Required runtime secret. Deploy to Cloudflare should prompt for this as a secret/input field, not in the Workers Builds API token dropdown.
-CLOUDFLARE_API_TOKEN=replace-with-runtime-cloudflare-api-token
+# Optional advanced runtime secret for Cloudflare sync and Email Routing automation.
+# CLOUDFLARE_API_TOKEN=replace-with-runtime-cloudflare-api-token

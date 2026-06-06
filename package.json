@@ -17,20 +17,11 @@
     "label": "Emailfox",
     "products": ["Workers", "D1", "R2"],
     "bindings": {
-      "DOMAINS": {
-        "description": "Required. Main email domain to manage first, for example `example.com`. Emailfox will create the first domain as the default during setup. You may enter more domains later in the app."
-      },
-      "CLOUDFLARE_API_TOKEN": {
-        "description": "Required runtime secret. This is not the Workers Builds API token dropdown. Paste a Cloudflare API token used by Emailfox for inventory sync and Email Routing rule management. Recommended scopes: Account Read, Account Email Sending Read, Zone Read, Zone Email Routing Read/Edit, Workers Scripts Read."
-      },
       "DB": {
         "description": "Required D1 database. Keep the generated `database_id` in installed copies so updates reuse the same database."
       },
       "MAIL_BUCKET": {
         "description": "Required R2 bucket for raw messages and attachments. Keep the generated bucket name in installed copies so updates reuse the same bucket."
-      },
-      "WORKER_SCRIPT_NAME": {
-        "description": "Required. Keep this equal to the Worker script name chosen in Cloudflare's deploy screen. The default is `emailfox`."
       }
     }
   },

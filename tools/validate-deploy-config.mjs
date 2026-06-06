@@ -10,13 +10,6 @@ if (process.env[SKIP_FLAG] === "1") {
 const config = readJsonc("wrangler.jsonc");
 const failures = [];
 
-const domains = String(config.vars?.DOMAINS ?? config.vars?.PRIMARY_DOMAIN ?? "")
-  .trim()
-  .toLowerCase();
-if (!domains || domains.split(",").some((domain) => domain.trim() === "example.com")) {
-  failures.push("Set vars.DOMAINS to your real first email domain before building.");
-}
-
 const d1 = Array.isArray(config.d1_databases) ? config.d1_databases.find((item) => item.binding === "DB") : null;
 if (!d1?.database_name) {
   failures.push("Set d1_databases binding DB with a database_name so Cloudflare can create or reuse D1.");
@@ -28,11 +21,6 @@ if (!d1?.database_id || d1.database_id === PLACEHOLDER_D1_ID) {
 const r2 = Array.isArray(config.r2_buckets) ? config.r2_buckets.find((item) => item.binding === "MAIL_BUCKET") : null;
 if (!r2?.bucket_name) {
   failures.push("Set r2_buckets binding MAIL_BUCKET with a bucket_name so Cloudflare can create or reuse R2.");
-}
-
-const workerName = String(config.vars?.WORKER_SCRIPT_NAME ?? "").trim();
-if (!workerName) {
-  failures.push("Set vars.WORKER_SCRIPT_NAME to the Worker script name.");
 }
 
 if (failures.length > 0) {

@@ -105,11 +105,13 @@ The password is stored only as a salted PBKDF2 hash in D1.
 
 `ADMIN_PASSWORD_BOOTSTRAP` is optional and exists only for legacy or automated installs. Normal public deploys can leave it blank.
 
-### Cloudflare API Token
+### Advanced Cloudflare Automation
 
-Create a Cloudflare API token for `CLOUDFLARE_API_TOKEN`.
+Emailfox can be deployed without a runtime Cloudflare API token. In that mode, the inbox, setup, D1, R2, contacts, signatures, sending from configured addresses, and manual domain management can still work.
 
-Cloudflare Workers Builds can create its own deploy token during the Deploy to Cloudflare flow. That token is only for building and deploying the Worker. Emailfox still needs a runtime `CLOUDFLARE_API_TOKEN` secret so the deployed Worker can call the Cloudflare API for zone inventory, Email Routing, and Email Sending status.
+Add `CLOUDFLARE_API_TOKEN` later only if you want Emailfox to call the Cloudflare API for zone inventory, Email Routing status, Email Sending status, catch-all setup, and mailbox routing rule creation.
+
+Cloudflare Workers Builds can create its own deploy token during the Deploy to Cloudflare flow. That dropdown token is only for building and deploying the Worker. It is not the same as Emailfox's optional runtime `CLOUDFLARE_API_TOKEN`.
 
 Recommended permissions:
 
@@ -127,26 +129,21 @@ If your token can access exactly one Cloudflare account, Emailfox detects that a
 During one-click deploy, Cloudflare reads:
 
 - `wrangler.jsonc` for Worker, D1, R2, assets, and env vars
-- `.dev.vars.example` and `.env.example` for required secrets such as `CLOUDFLARE_API_TOKEN`
+- `package.json` scripts and Cloudflare binding descriptions
 - `package.json` scripts and Cloudflare binding descriptions
 
-The `API token` dropdown in Cloudflare's deploy screen is for Workers Builds, meaning the token Cloudflare uses to build and deploy this repository. It is separate from Emailfox's `CLOUDFLARE_API_TOKEN` runtime secret. Emailfox's token should appear as a named secret/input field, not inside that dropdown.
+The `API token` dropdown in Cloudflare's deploy screen is for Workers Builds, meaning the token Cloudflare uses to build and deploy this repository. Emailfox's optional runtime `CLOUDFLARE_API_TOKEN` is advanced and is intentionally not part of the one-click deploy form.
 
 You will be asked to configure:
 
 | Value | Required | Notes |
 | --- | --- | --- |
 | `DOMAINS` | Yes | Main email domain for first setup. Replace the `example.com` placeholder before build. |
-| `CLOUDFLARE_API_TOKEN` | Yes | Runtime secret used for Cloudflare sync and routing rule creation. This is separate from the Workers Builds API token dropdown. |
 | `WORKER_SCRIPT_NAME` | Yes | Keep this equal to the Worker script name selected in Cloudflare's deploy screen. |
 | D1 database name | Yes | Default is `emailfox-db`; Cloudflare can provision it. |
 | R2 bucket name | Yes | Cloudflare can provision it during deploy. |
 
-Every deployer must provide their own secrets in Cloudflare during setup. Do not put real values in `wrangler.jsonc`, README files, screenshots, issues, or commits.
-
-Use Cloudflare secrets for:
-
-- `CLOUDFLARE_API_TOKEN`
+No secrets are required during the first one-click deploy. Do not put real values in `wrangler.jsonc`, README files, screenshots, issues, or commits.
 
 Use plain Worker vars only for non-secret values:
 
@@ -160,6 +157,8 @@ Advanced/manual installs may also add non-secret Worker vars later:
 - `CLOUDFLARE_ACCOUNT_ID` when one API token can access multiple Cloudflare accounts.
 
 These advanced values are intentionally not part of the one-click deploy form.
+
+Advanced/manual installs may also add the `CLOUDFLARE_API_TOKEN` secret later to enable Cloudflare sync and routing automation.
 
 `database_id` is not a Worker secret, but it is account-specific. The public template uses the placeholder `00000000-0000-0000-0000-000000000000` so the Deploy to Cloudflare resource step can replace it with the deployer's own generated D1 database id. Installed copies must keep that generated `database_id` for updates. For a private/manual deployment, add the deployer's own `database_id` locally or through the deploy platform configuration, never as a committed personal value.
 
@@ -242,13 +241,13 @@ If you created resources manually, update `wrangler.jsonc` with your D1 `databas
 
 For one-click deploy, leave these resource IDs out and let Cloudflare provision them.
 
-Set secrets:
+Optional advanced Cloudflare automation secret:
 
 ```bash
 npx wrangler secret put CLOUDFLARE_API_TOKEN
 ```
 
-Only set `ADMIN_PASSWORD_BOOTSTRAP` if you intentionally want to skip the first-screen admin creation flow.
+Only set `CLOUDFLARE_API_TOKEN` if you want Emailfox to sync Cloudflare inventory or create Email Routing rules automatically. Only set `ADMIN_PASSWORD_BOOTSTRAP` if you intentionally want to skip the first-screen admin creation flow.
 
 Optionally edit non-secret vars in `wrangler.jsonc`:
 
@@ -276,7 +275,7 @@ Create `.dev.vars` from the example:
 cp .dev.vars.example .dev.vars
 ```
 
-Edit `.dev.vars`:
+Edit `.dev.vars` only if you want local Cloudflare automation:
 
 ```dotenv
 CLOUDFLARE_API_TOKEN=replace-with-runtime-cloudflare-api-token

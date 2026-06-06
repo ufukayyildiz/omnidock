@@ -12,15 +12,6 @@
     "binding": "ASSETS",
     "directory": "./dist/client"
   },
-  "vars": {
-    // Required for one-click deploy. Replace example.com in the Deploy to Cloudflare setup form.
-    "DOMAINS": "example.com",
-    // Required for Email Routing rule creation. Keep this equal to the Worker script name chosen in deploy.
-    "WORKER_SCRIPT_NAME": "emailfox"
-  },
-  "secrets": {
-    "required": ["CLOUDFLARE_API_TOKEN"]
-  },
   "d1_databases": [
     {
       "binding": "DB",
