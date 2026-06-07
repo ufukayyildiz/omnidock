@@ -7,7 +7,7 @@ Use this file when publishing OmniDock as a public GitHub repository. GitHub rep
 Description:
 
 ```text
-Open-source Cloudflare email dashboard for Workers, Email Routing, Email Sending, D1, R2, support inboxes, Gmail sync, contacts, signatures, logs, and R2 file management.
+Open-source Cloudflare email dashboard for Workers, Email Routing, Email Sending, D1, R2 bucket management, support inboxes, Gmail sync, external IMAP/SMTP, previews, uploads, contacts, signatures, logs, and OCR-ready search.
 ```
 
 Website:
@@ -31,10 +31,14 @@ self-hosted-email
 email-routing
 email-sending
 r2-storage
+r2-bucket-manager
 d1-database
 gmail-sync
+external-email
 imap
 smtp
+pdf-preview
+ocr-indexing
 serverless
 react
 typescript
@@ -60,7 +64,13 @@ The README should naturally include these phrases without keyword stuffing:
 - serverless email dashboard
 - multi-domain email routing
 - Gmail IMAP sync
+- external IMAP/SMTP email accounts
 - R2 file manager
+- R2 bucket manager
+- R2 upload and download workflow
+- PDF preview
+- attachment preview
+- OCR-ready text indexing
 - D1 email database
 - R2 attachment storage
 
@@ -86,6 +96,8 @@ Suggested starter issues:
 - Add export/import tooling for OmniDock settings.
 - Add optional OCR integration guide for searchable scanned PDFs.
 - Add more IMAP provider presets.
+- Add demo screenshots for R2 upload progress and PDF preview.
+- Add documentation for Gmail app password Worker secrets.
 
 ## Release Titles
 
@@ -96,6 +108,7 @@ Examples:
 - `OmniDock v0.1.0 - Cloudflare Workers email dashboard`
 - `OmniDock v0.2.0 - Gmail sync and R2 bucket manager`
 - `OmniDock v0.3.0 - Cloudflare Email Routing automation`
+- `OmniDock v0.4.0 - External IMAP/SMTP accounts and OCR-ready R2 search`
 
 ## Repository Quality Signals
 
@@ -109,6 +122,7 @@ Before asking for stars, make sure the repository has:
 - No private Cloudflare account ids, D1 ids, bucket names, tokens, personal emails, or custom domains committed.
 - A first tagged release.
 - A short demo video or GIF linked near the top of the README when available.
+- A GitHub Pages product page served from `docs/`, with `robots.txt`, `sitemap.xml`, screenshots, and Open Graph metadata.
 
 ## Website Copy
 
@@ -130,9 +144,26 @@ Short paragraph:
 OmniDock gives teams a self-hosted support inbox, multi-domain routing dashboard, external email sync, contacts, signatures, logs, and R2 file management without leaving the Cloudflare platform.
 ```
 
+Feature paragraph:
+
+```text
+Use OmniDock to connect Cloudflare-managed mailboxes, Gmail, Outlook, Yahoo, iCloud, or custom IMAP/SMTP accounts; browse and control R2 buckets; preview PDFs, images, text files, and attachments; upload and delete objects; search paths, PDF text, and saved OCR text indexes; and keep audit logs in D1.
+```
+
+R2 and OCR paragraph:
+
+```text
+OmniDock includes an R2 bucket manager for Cloudflare Workers. It supports folder browsing, file preview, upload progress, downloads, deletes, path search, text/PDF search, and OCR-ready text indexes for scanned PDFs or image files without automatic AI spend.
+```
+
+External email paragraph:
+
+```text
+OmniDock can connect Gmail and other external email accounts through IMAP and SMTP profiles. Credentials stay in Cloudflare Worker secrets while mailbox metadata and resumable sync cursors live in D1.
+```
+
 Call to action:
 
 ```text
 Fork on GitHub
 ```
-

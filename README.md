@@ -519,7 +519,7 @@ The seed endpoint is disabled unless `ENABLE_DEV_SEED=true`.
 - Store external email credentials as Worker secrets; OmniDock stores only the secret name.
 - Password reset tokens are stored hashed in D1 and expire after 30 minutes.
 - OmniDock only sends from enabled D1 mailbox addresses on verified sending domains.
-- The browser stores the admin password in `sessionStorage` for the current session. For a larger public SaaS deployment, replace this with HttpOnly session cookies and CSRF protection.
+- The browser does not store the admin password in web storage. Login creates a D1-backed admin session and returns an HttpOnly, SameSite cookie; only a hash of the session token is stored server-side.
 - The default public template has no custom domain, account id, D1 id, R2 bucket, token, password, or personal email baked into source control.
 
 ## Useful Commands

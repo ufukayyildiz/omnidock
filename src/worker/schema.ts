@@ -11,7 +11,8 @@ const CURRENT_MIGRATIONS = [
   "0008_contact_phone.sql",
   "0009_auth_attempts.sql",
   "0010_bucket_text_index.sql",
-  "0011_external_sync_jobs.sql"
+  "0011_external_sync_jobs.sql",
+  "0012_admin_sessions.sql"
 ];
 
 let schemaReady: Promise<void> | null = null;
@@ -218,6 +219,12 @@ const schemaStatements = [
     locked_until TEXT,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS admin_sessions (
+    token_hash TEXT PRIMARY KEY,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE TABLE IF NOT EXISTS bucket_text_index (
     id TEXT PRIMARY KEY,
     bucket_id TEXT NOT NULL,
@@ -278,6 +285,7 @@ const indexStatements = [
   "CREATE INDEX IF NOT EXISTS idx_admin_auth_email ON admin_auth(admin_email)",
   "CREATE INDEX IF NOT EXISTS idx_admin_auth_reset ON admin_auth(reset_token_hash)",
   "CREATE INDEX IF NOT EXISTS idx_auth_attempts_locked ON auth_attempts(locked_until)",
+  "CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)",
   "CREATE INDEX IF NOT EXISTS idx_bucket_text_index_bucket ON bucket_text_index(bucket_id, object_key)",
   "CREATE INDEX IF NOT EXISTS idx_bucket_text_index_normalized ON bucket_text_index(normalized_text)",
   "CREATE INDEX IF NOT EXISTS idx_external_sync_jobs_status ON external_sync_jobs(status, lease_until, updated_at)"

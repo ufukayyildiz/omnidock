@@ -51,6 +51,8 @@ import {
   ExternalAccountInput,
   confirmPasswordReset,
   createAdmin,
+  login,
+  logout,
   requestPasswordReset,
   setupStatus
 } from "./api";
@@ -75,7 +77,6 @@ import {
   ThreadRow
 } from "./types";
 
-const PASSWORD_KEY = "omnidock.password";
 const PALETTE_KEY = "omnidock.palette";
 const DEFAULT_MAILBOX_KEY = "omnidock.defaultMailbox";
 const REFRESH_INTERVAL_KEY = "omnidock.refreshIntervalSeconds";
@@ -356,7 +357,7 @@ function useAppDialog(): AppDialogApi {
 function AppContent() {
   const initialResetToken = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
   const [palette, setPalette] = useState<PaletteKey>(initialPalette);
-  const [password, setPassword] = useState(() => sessionStorage.getItem(PASSWORD_KEY) ?? "");
+  const [authenticated, setAuthenticated] = useState(false);
   const [draftPassword, setDraftPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
@@ -385,8 +386,9 @@ function AppContent() {
   const [composeOpen, setComposeOpen] = useState(false);
   const externalSyncingIds = useRef<Set<string>>(new Set());
   const externalSyncMonitorRef = useRef(false);
+  const sessionCheckRef = useRef(false);
 
-  const api = useMemo(() => (password ? new ApiClient(password) : null), [password]);
+  const api = useMemo(() => (authenticated ? new ApiClient() : null), [authenticated]);
   const activePalette = palettes.find((item) => item.key === palette) ?? palettes[0];
   const selectedExternalAccount = useMemo(
     () => (bootstrap && selectedMailboxId ? externalAccountFromScope(selectedMailboxId, bootstrap.externalAccounts ?? []) : null),
@@ -422,6 +424,42 @@ function AppContent() {
     setComposeOpen(false);
   }, []);
 
+  const applyBootstrap = useCallback((data: BootstrapPayload) => {
+    const mailboxScopes = [...data.mailboxes.map((mailbox) => mailbox.id), ...(data.externalAccounts ?? []).map(externalMailboxScopeId)];
+    const hasMailboxScopes = mailboxScopes.length > 0;
+    const defaultDomain = data.domains.find((domain) => domain.is_default === 1) ?? null;
+    setBootstrap(data);
+    setThreads(hasMailboxScopes ? [] : data.threads);
+    setThreadTotal(hasMailboxScopes ? 0 : data.threads.length);
+    setThreadHasMore(false);
+    setFolderStats(data.stats);
+    setSelectedDomainId((current) =>
+      current && data.domains.some((domain) => domain.id === current) ? current : defaultDomain?.id ?? data.domains[0]?.id ?? null
+    );
+    setSelectedMailboxId((current) => {
+      if (current && mailboxScopes.includes(current)) return current;
+
+      const storedDefaultId = localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "";
+      if (storedDefaultId && mailboxScopes.includes(storedDefaultId)) {
+        setDefaultMailboxId(storedDefaultId);
+        return storedDefaultId;
+      }
+
+      if (storedDefaultId) {
+        localStorage.removeItem(DEFAULT_MAILBOX_KEY);
+        setDefaultMailboxId("");
+      }
+
+      return mailboxScopes[0] ?? null;
+    });
+    setSelectedBucketId((current) =>
+      current && data.buckets.some((bucket) => bucket.id === current) ? current : data.buckets[0]?.id ?? null
+    );
+    setActiveThreadId((current) => (hasMailboxScopes ? null : current ?? data.threads[0]?.thread_id ?? null));
+    setLoginError(null);
+    setNotice(null);
+  }, []);
+
   const loadSetupStatus = useCallback(async (options: { fallbackToChecking?: boolean } = {}) => {
     try {
       const status = await setupStatus();
@@ -434,6 +472,19 @@ function AppContent() {
       } else if (resetToken) {
         setAuthView("reset-confirm");
       } else {
+        if (!sessionCheckRef.current) {
+          sessionCheckRef.current = true;
+          try {
+            const data = await new ApiClient().bootstrap();
+            applyBootstrap(data);
+            setAuthenticated(true);
+            return;
+          } catch (error) {
+            if (!isAuthError(error)) {
+              setLoginError(readError(error));
+            }
+          }
+        }
         setAuthView("login");
       }
     } catch (error) {
@@ -443,54 +494,18 @@ function AppContent() {
         setAuthView("checking");
       }
     }
-  }, [resetToken]);
+  }, [applyBootstrap, resetToken]);
 
   const loadBootstrap = useCallback(async () => {
     if (!api) return;
     setBusy(true);
     try {
       const data = await api.bootstrap();
-      const mailboxScopes = [...data.mailboxes.map((mailbox) => mailbox.id), ...(data.externalAccounts ?? []).map(externalMailboxScopeId)];
-      const hasMailboxScopes = mailboxScopes.length > 0;
-      const defaultDomain = data.domains.find((domain) => domain.is_default === 1) ?? null;
-      sessionStorage.setItem(PASSWORD_KEY, password);
-      setBootstrap(data);
-      setThreads(hasMailboxScopes ? [] : data.threads);
-      setThreadTotal(hasMailboxScopes ? 0 : data.threads.length);
-      setThreadHasMore(false);
-      setFolderStats(data.stats);
-      setSelectedDomainId((current) =>
-        current && data.domains.some((domain) => domain.id === current)
-          ? current
-          : defaultDomain?.id ?? data.domains[0]?.id ?? null
-      );
-      setSelectedMailboxId((current) => {
-        if (current && mailboxScopes.includes(current)) return current;
-
-        const storedDefaultId = localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "";
-        if (storedDefaultId && mailboxScopes.includes(storedDefaultId)) {
-          setDefaultMailboxId(storedDefaultId);
-          return storedDefaultId;
-        }
-
-        if (storedDefaultId) {
-          localStorage.removeItem(DEFAULT_MAILBOX_KEY);
-          setDefaultMailboxId("");
-        }
-
-        return mailboxScopes[0] ?? null;
-      });
-      setSelectedBucketId((current) =>
-        current && data.buckets.some((bucket) => bucket.id === current) ? current : data.buckets[0]?.id ?? null
-      );
-      setActiveThreadId((current) => (hasMailboxScopes ? null : current ?? data.threads[0]?.thread_id ?? null));
-      setLoginError(null);
-      setNotice(null);
+      applyBootstrap(data);
     } catch (error) {
       const message = readError(error);
       if (isAuthError(error)) {
-        sessionStorage.removeItem(PASSWORD_KEY);
-        setPassword("");
+        setAuthenticated(false);
         setAuthView("login");
         setLoginError(message);
         setNotice(null);
@@ -502,13 +517,13 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
-  }, [api, clearPrivateState, password]);
+  }, [api, applyBootstrap, clearPrivateState]);
 
   useEffect(() => {
-    if (!password) {
+    if (!authenticated) {
       void loadSetupStatus();
     }
-  }, [loadSetupStatus, password]);
+  }, [authenticated, loadSetupStatus]);
 
   const loadThreads = useCallback(async (options: { preserveSelection?: boolean; clearSelection?: boolean; append?: boolean; offset?: number } = {}) => {
     if (!api) return;
@@ -664,13 +679,22 @@ function AppContent() {
     }
   }, [activeThreadId, loadThread]);
 
-  function unlock(event: FormEvent<HTMLFormElement>) {
+  async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draftPassword) return;
+    setBusy(true);
     setLoginError(null);
     setAuthNotice(null);
     clearPrivateState();
-    setPassword(draftPassword);
+    try {
+      await login(draftPassword);
+      setDraftPassword("");
+      setAuthenticated(true);
+    } catch (error) {
+      setLoginError(readError(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitSetup(input: {
@@ -683,8 +707,8 @@ function AppContent() {
     setBusy(true);
     try {
       await createAdmin(input);
-      sessionStorage.removeItem(PASSWORD_KEY);
-      setPassword("");
+      setAuthenticated(false);
+      sessionCheckRef.current = true;
       setDraftPassword("");
       setAuthNotice("Setup complete. Log in with your password.");
       setLoginError(null);
@@ -741,15 +765,16 @@ function AppContent() {
   }
 
   function lock() {
-    sessionStorage.removeItem(PASSWORD_KEY);
-    setPassword("");
+    void logout().catch(() => undefined);
+    sessionCheckRef.current = true;
+    setAuthenticated(false);
     setLoginError(null);
     setAuthNotice(null);
     clearPrivateState();
     setAuthView(setup && !setup.configurationReady ? "configuration" : setup?.setupRequired ? "setup" : "login");
   }
 
-  if (!password) {
+  if (!authenticated) {
     if (authView === "checking") {
       return (
         <AuthStatusScreen

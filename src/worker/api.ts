@@ -1,6 +1,10 @@
 import {
+  adminSessionCookie,
+  clearAdminSessionCookie,
   confirmAdminPasswordReset,
+  createAdminSession,
   createAdminAccount,
+  destroyAdminSession,
   getSetupStatus,
   requestAdminPasswordReset,
   requireAdmin,
@@ -162,6 +166,21 @@ export async function handleApi(
       });
       ctx.waitUntil(recordAudit(env, "admin.password_reset", "primary", {}));
       return json({ ok: true });
+    }
+
+    if (url.pathname === "/api/auth/login") {
+      if (request.method !== "POST") return methodNotAllowed();
+      requireD1Binding(env);
+      const body = await readJson(request);
+      const token = await createAdminSession(env, request, requiredString(body, "password", { min: 1, max: 256 }));
+      return json({ ok: true }, { headers: { "set-cookie": adminSessionCookie(token, request) } });
+    }
+
+    if (url.pathname === "/api/auth/logout") {
+      if (request.method !== "POST") return methodNotAllowed();
+      requireD1Binding(env);
+      await destroyAdminSession(env, request);
+      return json({ ok: true }, { headers: { "set-cookie": clearAdminSessionCookie(request) } });
     }
 
     requireD1Binding(env);

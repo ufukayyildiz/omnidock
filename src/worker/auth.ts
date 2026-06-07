@@ -7,6 +7,9 @@ const encoder = new TextEncoder();
 const PASSWORD_ITERATIONS = 100_000;
 const RESET_TOKEN_BYTES = 32;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const SESSION_TOKEN_BYTES = 32;
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_COOKIE_NAME = "omnidock_session";
 const AUTH_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_LOCK_MS = 15 * 60 * 1000;
 const AUTH_MAX_FAILURES = 5;
@@ -27,6 +30,11 @@ type AuthAttemptRow = {
   updated_at: string;
 };
 
+type AdminSessionRow = {
+  token_hash: string;
+  expires_at: string;
+};
+
 export type SetupStatus = {
   setupRequired: boolean;
   resetAvailable: boolean;
@@ -37,6 +45,14 @@ export async function requireAdmin(request: Request, env: RuntimeEnv): Promise<v
 
   const provided = extractPassword(request);
   const record = await getAdminAuth(env);
+
+  const sessionToken = extractSessionToken(request);
+  if (record && sessionToken) {
+    if (await verifyAdminSession(env, sessionToken)) {
+      return;
+    }
+    throw new ApiError(401, "session_expired", "Session expired. Log in again.");
+  }
 
   if (!record) {
     await bootstrapPassword(env, provided, request);
@@ -134,6 +150,63 @@ export async function setAdminPassword(env: RuntimeEnv, password: string): Promi
   )
     .bind(hash, salt, PASSWORD_ITERATIONS)
     .run();
+
+  await clearAdminSessions(env);
+}
+
+export async function createAdminSession(env: RuntimeEnv, request: Request, password: string): Promise<string> {
+  await ensureDatabaseSchema(env);
+  await enforceAuthRateLimit(env, request);
+
+  let record = await getAdminAuth(env);
+  if (!record) {
+    const bootstrap = configuredAdminPassword(env);
+    if (!bootstrap) {
+      throw new ApiError(409, "setup_required", "Create the first admin account before logging in.");
+    }
+    if (!(await securePlainEqual(password, bootstrap))) {
+      await recordFailedAuthAttempt(env, request);
+      throw new ApiError(401, "unauthorized", "Invalid password");
+    }
+    await setAdminPassword(env, bootstrap);
+    record = await getAdminAuth(env);
+  }
+
+  if (!record || !(await verifyPassword(password, record))) {
+    await recordFailedAuthAttempt(env, request);
+    throw new ApiError(401, "unauthorized", "Invalid password");
+  }
+
+  await clearAuthAttempt(env, request);
+  await deleteExpiredAdminSessions(env);
+
+  const token = randomToken(SESSION_TOKEN_BYTES);
+  const tokenHash = await sha256Base64(token);
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO admin_sessions (token_hash, expires_at, created_at, last_seen_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+  )
+    .bind(tokenHash, expiresAt)
+    .run();
+
+  return token;
+}
+
+export async function destroyAdminSession(env: RuntimeEnv, request: Request): Promise<void> {
+  await ensureDatabaseSchema(env);
+  const token = extractSessionToken(request);
+  if (!token) return;
+  await env.DB.prepare("DELETE FROM admin_sessions WHERE token_hash = ?").bind(await sha256Base64(token)).run();
+}
+
+export function adminSessionCookie(token: string, request: Request): string {
+  const maxAgeSeconds = Math.floor(SESSION_TTL_MS / 1000);
+  return cookieHeader(SESSION_COOKIE_NAME, token, maxAgeSeconds, request);
+}
+
+export function clearAdminSessionCookie(request: Request): string {
+  return cookieHeader(SESSION_COOKIE_NAME, "", 0, request);
 }
 
 export async function requestAdminPasswordReset(
@@ -257,6 +330,31 @@ async function clearAuthAttempt(env: RuntimeEnv, request: Request): Promise<void
   await env.DB.prepare("DELETE FROM auth_attempts WHERE key = ?").bind(await authAttemptKey(request)).run();
 }
 
+async function verifyAdminSession(env: RuntimeEnv, token: string): Promise<boolean> {
+  const tokenHash = await sha256Base64(token);
+  const row =
+    (await env.DB.prepare("SELECT token_hash, expires_at FROM admin_sessions WHERE token_hash = ?")
+      .bind(tokenHash)
+      .first<AdminSessionRow>()) ?? null;
+  if (!row) return false;
+
+  if (Date.parse(row.expires_at) <= Date.now()) {
+    await env.DB.prepare("DELETE FROM admin_sessions WHERE token_hash = ?").bind(tokenHash).run();
+    return false;
+  }
+
+  await env.DB.prepare("UPDATE admin_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE token_hash = ?").bind(tokenHash).run();
+  return secureStringEqual(tokenHash, row.token_hash);
+}
+
+async function clearAdminSessions(env: RuntimeEnv): Promise<void> {
+  await env.DB.prepare("DELETE FROM admin_sessions").run();
+}
+
+async function deleteExpiredAdminSessions(env: RuntimeEnv): Promise<void> {
+  await env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").bind(new Date().toISOString()).run();
+}
+
 async function getAuthAttempt(env: RuntimeEnv, key: string): Promise<AuthAttemptRow | null> {
   return (await env.DB.prepare("SELECT failures, locked_until, updated_at FROM auth_attempts WHERE key = ?").bind(key).first<AuthAttemptRow>()) ?? null;
 }
@@ -343,9 +441,39 @@ function randomSalt(): string {
 }
 
 function randomResetToken(): string {
-  const bytes = new Uint8Array(RESET_TOKEN_BYTES);
+  return randomToken(RESET_TOKEN_BYTES);
+}
+
+function randomToken(size: number): string {
+  const bytes = new Uint8Array(size);
   crypto.getRandomValues(bytes);
   return bytesToBase64(bytes).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+function extractSessionToken(request: Request): string | null {
+  const cookie = request.headers.get("cookie") ?? "";
+  for (const part of cookie.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === SESSION_COOKIE_NAME) {
+      const value = rawValue.join("=");
+      return value || null;
+    }
+  }
+  return null;
+}
+
+function cookieHeader(name: string, value: string, maxAgeSeconds: number, request: Request): string {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return [
+    `${name}=${value}`,
+    "Path=/",
+    `Max-Age=${maxAgeSeconds}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    secure
+  ]
+    .filter(Boolean)
+    .join("; ");
 }
 
 function validatePassword(password: string): void {

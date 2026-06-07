@@ -16,6 +16,7 @@ import {
   type ExternalAccountRow
 } from "./db";
 import { ApiError, RuntimeEnv, isRecord } from "./http";
+import { htmlToPlainText as htmlToText } from "./html";
 import { ensureDatabaseSchema } from "./schema";
 
 type SyncOptions = {
@@ -965,21 +966,6 @@ function buildObjectKey(kind: "raw" | "attachments", mailbox: string, filename: 
 
 function makeSnippet(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 240);
-}
-
-function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function parseEmailDate(value: string | undefined): string {

@@ -20,6 +20,7 @@ import {
   recordAudit
 } from "./db";
 import { ApiError, RuntimeEnv, isRecord } from "./http";
+import { htmlToPlainText as htmlToText } from "./html";
 import { ensureDatabaseSchema } from "./schema";
 
 type SendInput = {
@@ -471,8 +472,13 @@ function shouldRetryImplicitTlsForGmail(account: ExternalAccountRow, error: unkn
   if (!(error instanceof ApiError) || error.code !== "smtp_timeout") return false;
   if (!/tls handshake/i.test(error.message)) return false;
   if ((account.smtp_security ?? "").toLowerCase() !== "starttls") return false;
-  const host = (account.smtp_host ?? "").toLowerCase();
-  return account.provider === "gmail" || host.includes("gmail.com");
+  return account.provider === "gmail" || isHostnameOrSubdomain(account.smtp_host ?? "", "gmail.com");
+}
+
+function isHostnameOrSubdomain(value: string, domain: string): boolean {
+  const hostname = value.trim().toLowerCase().replace(/\.$/, "");
+  const normalizedDomain = domain.toLowerCase();
+  return hostname === normalizedDomain || hostname.endsWith(`.${normalizedDomain}`);
 }
 
 async function prepareThreadHeaders(
@@ -833,21 +839,6 @@ function addressListFromParsed(value: unknown, fallback: string): string[] {
 
 function makeSnippet(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 240);
-}
-
-function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function textToHtml(text: string): string {

@@ -93,9 +93,18 @@ export function confirmPasswordReset(input: { token: string; password: string })
   });
 }
 
-export class ApiClient {
-  constructor(private readonly password: string) {}
+export function login(password: string): Promise<{ ok: true }> {
+  return publicRequest("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ password })
+  });
+}
 
+export function logout(): Promise<{ ok: true }> {
+  return publicRequest("/api/auth/logout", { method: "POST" });
+}
+
+export class ApiClient {
   bootstrap(): Promise<BootstrapPayload> {
     return this.request<BootstrapPayload>("/api/bootstrap");
   }
@@ -278,9 +287,7 @@ export class ApiClient {
 
   async downloadAttachment(id: string): Promise<Blob> {
     const response = await fetch(`/api/attachments/${id}`, {
-      headers: {
-        authorization: `Bearer ${this.password}`
-      }
+      credentials: "same-origin"
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -317,9 +324,7 @@ export class ApiClient {
 
   async downloadBucketObject(bucketId: string, key: string): Promise<Blob> {
     const response = await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/object?key=${encodeURIComponent(key)}`, {
-      headers: {
-        authorization: `Bearer ${this.password}`
-      }
+      credentials: "same-origin"
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -331,8 +336,8 @@ export class ApiClient {
   async uploadBucketObject(bucketId: string, key: string, file: File): Promise<unknown> {
     const response = await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/object?key=${encodeURIComponent(key)}`, {
       method: "PUT",
+      credentials: "same-origin",
       headers: {
-        authorization: `Bearer ${this.password}`,
         "content-type": file.type || "application/octet-stream"
       },
       body: file
@@ -343,9 +348,7 @@ export class ApiClient {
   async deleteBucketObject(bucketId: string, key: string): Promise<unknown> {
     const response = await fetch(`/api/buckets/${encodeURIComponent(bucketId)}/object?key=${encodeURIComponent(key)}`, {
       method: "DELETE",
-      headers: {
-        authorization: `Bearer ${this.password}`
-      }
+      credentials: "same-origin"
     });
     return readApiResponse(response);
   }
@@ -370,8 +373,8 @@ export class ApiClient {
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(path, {
       ...init,
+      credentials: "same-origin",
       headers: {
-        authorization: `Bearer ${this.password}`,
         "content-type": "application/json",
         ...(init.headers ?? {})
       }
@@ -428,6 +431,7 @@ async function readApiResponse<T = unknown>(response: Response): Promise<T> {
 async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    credentials: "same-origin",
     headers: {
       "content-type": "application/json",
       ...(init.headers ?? {})
