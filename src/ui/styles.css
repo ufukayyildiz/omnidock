@@ -789,11 +789,6 @@ button:hover:not(:disabled) {
   color: var(--accent-strong);
 }
 
-.button.icon-only {
-  width: 34px;
-  padding: 0;
-}
-
 .button.wide {
   width: 100%;
 }
@@ -1688,49 +1683,6 @@ button:hover:not(:disabled) {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
-.field-with-button {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.field-help,
-.field-warning {
-  margin-top: 1px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.field-help {
-  color: var(--muted);
-}
-
-.field-warning {
-  color: var(--warn);
-}
-
-.secret-command {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel-alt);
-}
-
-.secret-command code {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--accent-strong);
-  font: 12px/1.2 var(--mono);
-}
-
 .file-drop {
   display: grid;
   place-items: center;
@@ -1976,6 +1928,39 @@ button:hover:not(:disabled) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.external-secret-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-alt);
+}
+
+.external-secret-note div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.external-secret-note span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.external-secret-note code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent-strong);
+  font: 12px/1.2 var(--mono);
 }
 
 .external-toggle-row,

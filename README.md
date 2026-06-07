@@ -273,13 +273,7 @@ Signatures are mailbox-based and support rich text, links, colors, and an HTML p
 
 External account profiles let you document Gmail, Outlook, Yahoo, iCloud, or custom IMAP/SMTP settings. OmniDock stores the credential secret name and connection metadata in D1. Put real app passwords or OAuth secrets in Cloudflare Worker secrets, not in D1 and not in the repository.
 
-For Gmail app passwords, create a Worker secret first and save only that secret name in OmniDock:
-
-```bash
-npx wrangler secret put GMAIL_APP_SECRET_NAME_AT_GMAIL_DOT_COM
-```
-
-Paste the Gmail app password as the secret value in Cloudflare. In OmniDock, use `GMAIL_APP_SECRET_NAME_AT_GMAIL_DOT_COM` or the auto-generated name shown in the External account form. For multiple Gmail accounts, keep the same pattern, for example `GMAIL_APP_SECRET_SALES_AT_GMAIL_DOT_COM`.
+For Gmail app passwords, create a Worker secret whose name is the Gmail address. In Cloudflare, set `Name` to `name@gmail.com` and `Value` to the Gmail app password. In OmniDock, add the same Gmail address as the external account. For multiple Gmail accounts, each account naturally gets its own secret name because each email address is unique.
 
 ### Other Settings
 

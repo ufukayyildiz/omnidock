@@ -1167,23 +1167,25 @@ function readExternalAccountInput(body: Record<string, unknown>): {
   const authType = enumString(body, "authType", ["app_password", "oauth2", "none"], "app_password");
   const imapSecurity = enumString(body, "imapSecurity", ["ssl", "starttls", "none"], "ssl");
   const smtpSecurity = enumString(body, "smtpSecurity", ["ssl", "starttls", "none"], "starttls");
-  const credentialSecretName = optionalString(body, "credentialSecretName", { max: 128 });
+  const email = requiredString(body, "email", { max: 320 });
+  const credentialSecretNameInput = optionalString(body, "credentialSecretName", { max: 320 });
+  const credentialSecretName = authType === "none" ? null : credentialSecretNameInput || email.toLowerCase();
 
-  if (credentialSecretName && !/^[A-Z_][A-Z0-9_]*$/i.test(credentialSecretName)) {
+  if (credentialSecretName && !isCredentialSecretReference(credentialSecretName)) {
     throw new ApiError(
       400,
       "invalid_secret_name",
-      "Enter a Worker secret name like GMAIL_APP_SECRET_NAME_AT_GMAIL_DOT_COM. Do not paste the email password itself."
+      "Enter an email address or a Worker secret name. Do not paste the email password itself."
     );
   }
 
   return {
     provider,
-    email: requiredString(body, "email", { max: 320 }),
+    email,
     displayName: optionalString(body, "displayName", { max: 160 }),
     username: optionalString(body, "username", { max: 320 }),
     authType,
-    credentialSecretName: credentialSecretName ? credentialSecretName.toUpperCase() : null,
+    credentialSecretName,
     imapHost: optionalString(body, "imapHost", { max: 253 }),
     imapPort: optionalPort(body, "imapPort"),
     imapSecurity,
@@ -1194,6 +1196,10 @@ function readExternalAccountInput(body: Record<string, unknown>): {
     outboundEnabled: optionalBoolean(body, "outboundEnabled"),
     notes: optionalString(body, "notes", { max: 2000 })
   };
+}
+
+function isCredentialSecretReference(value: string): boolean {
+  return /^[A-Z_][A-Z0-9_]*$/i.test(value) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function publicOrigin(request: Request, env: RuntimeEnv): string {
