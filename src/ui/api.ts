@@ -14,6 +14,7 @@ import {
 } from "./types";
 
 const SEND_REQUEST_TIMEOUT_MS = 70_000;
+const BUCKET_SEARCH_TIMEOUT_MS = 35_000;
 
 export type AttachmentDraft = {
   filename: string;
@@ -211,6 +212,24 @@ export class ApiClient {
     return this.request<AuditLogsPayload>(`/api/audit-logs${suffix}`);
   }
 
+  deleteAuditLog(id: string): Promise<{ ok: true; deleted: number }> {
+    return this.request(`/api/audit-logs/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  deleteAuditLogs(ids: string[]): Promise<{ ok: true; deleted: number }> {
+    return this.request("/api/audit-logs/delete", {
+      method: "POST",
+      body: JSON.stringify({ ids })
+    });
+  }
+
+  clearAuditLogs(): Promise<{ ok: true; deleted: number }> {
+    return this.request("/api/audit-logs/delete", {
+      method: "POST",
+      body: JSON.stringify({ all: true })
+    });
+  }
+
   deleteExternalAccount(id: string): Promise<unknown> {
     return this.request(`/api/external-accounts/${id}`, { method: "DELETE" });
   }
@@ -285,7 +304,12 @@ export class ApiClient {
     params.set("scope", input.allBuckets ? "all" : "bucket");
     if (input.bucketId) params.set("bucketId", input.bucketId);
     if (input.includeText) params.set("text", "1");
-    return this.request<BucketSearchPayload>(`/api/buckets/search?${params.toString()}`);
+    return this.requestWithTimeout<BucketSearchPayload>(
+      `/api/buckets/search?${params.toString()}`,
+      {},
+      BUCKET_SEARCH_TIMEOUT_MS,
+      "Bucket search timed out. Narrow the scope or turn off Text/PDF search, then try again."
+    );
   }
 
   async downloadBucketObject(bucketId: string, key: string): Promise<Blob> {

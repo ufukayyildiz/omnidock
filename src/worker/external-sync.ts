@@ -93,6 +93,10 @@ const SYNC_TIME_BUDGET_MS = 22_000;
 export const EXTERNAL_SYNC_HTTP_BACKGROUND_MS = 25_000;
 export const EXTERNAL_SYNC_MAX_RUN_MS = 15 * 60 * 1000;
 const EXTERNAL_SYNC_SAFETY_MS = 3_000;
+const IMAP_CONNECT_TIMEOUT_MS = 12_000;
+const IMAP_COMMAND_TIMEOUT_MS = 30_000;
+const IMAP_FETCH_TIMEOUT_MS = 60_000;
+const IMAP_LOGOUT_TIMEOUT_MS = 3_000;
 
 export async function syncExternalAccount(
   env: RuntimeEnv,
@@ -123,6 +127,7 @@ export async function syncExternalAccount(
 
 export async function listExternalSyncJobs(env: RuntimeEnv): Promise<ExternalSyncJobRow[]> {
   await ensureDatabaseSchema(env);
+  await requeueExpiredExternalSyncJobs(env);
   const result = await env.DB.prepare(
     "SELECT * FROM external_sync_jobs ORDER BY updated_at DESC LIMIT 200"
   ).all<ExternalSyncJobRow>();
@@ -140,6 +145,7 @@ export async function getExternalSyncJob(env: RuntimeEnv, accountId: string): Pr
 
 export async function queueExternalSyncJob(env: RuntimeEnv, account: ExternalAccountRow): Promise<ExternalSyncJobRow> {
   await ensureDatabaseSchema(env);
+  await requeueExpiredExternalSyncJobs(env);
   if (account.inbound_enabled !== 1) {
     throw new ApiError(400, "external_inbound_disabled", "Inbound sync is disabled for this external account");
   }
@@ -152,13 +158,7 @@ export async function queueExternalSyncJob(env: RuntimeEnv, account: ExternalAcc
       lease_until, started_at, updated_at, completed_at
     ) VALUES (?, 'queued', '[]', 0, NULL, 0, 0, 0, 0, 1, ?, NULL, NULL, ?, ?, NULL)
     ON CONFLICT(account_id) DO UPDATE SET
-      status = CASE
-        WHEN external_sync_jobs.status = 'running'
-          AND external_sync_jobs.lease_until IS NOT NULL
-          AND external_sync_jobs.lease_until > excluded.updated_at
-        THEN external_sync_jobs.status
-        ELSE 'queued'
-      END,
+      status = 'queued',
       folders_json = CASE WHEN external_sync_jobs.status IN ('complete', 'failed') THEN '[]' ELSE external_sync_jobs.folders_json END,
       folder_index = CASE WHEN external_sync_jobs.status IN ('complete', 'failed') THEN 0 ELSE external_sync_jobs.folder_index END,
       next_uid_exclusive = CASE WHEN external_sync_jobs.status IN ('complete', 'failed') THEN NULL ELSE external_sync_jobs.next_uid_exclusive END,
@@ -168,6 +168,7 @@ export async function queueExternalSyncJob(env: RuntimeEnv, account: ExternalAcc
       has_more = 1,
       message = excluded.message,
       last_error = NULL,
+      lease_until = NULL,
       updated_at = excluded.updated_at,
       completed_at = NULL`
   )
@@ -179,6 +180,20 @@ export async function queueExternalSyncJob(env: RuntimeEnv, account: ExternalAcc
     throw new ApiError(500, "external_sync_queue_failed", "External sync job could not be queued");
   }
   return job;
+}
+
+async function requeueExpiredExternalSyncJobs(env: RuntimeEnv): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE external_sync_jobs
+     SET status = 'queued',
+         message = 'Previous pull window expired. Run Sync to continue remaining mail.',
+         lease_until = NULL,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE status = 'running'
+       AND (lease_until IS NULL OR lease_until < ?)`
+  )
+    .bind(nowIso())
+    .run();
 }
 
 export async function queueAllExternalSyncJobs(env: RuntimeEnv): Promise<ExternalSyncJobRow[]> {
@@ -596,6 +611,7 @@ class ImapClient {
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private buffer = new Uint8Array(0);
   private tagCounter = 1;
+  private closed = false;
 
   private constructor(private socket: Socket) {
     this.reader = socket.readable.getReader();
@@ -608,15 +624,17 @@ class ImapClient {
       { hostname: input.host, port: input.port },
       { secureTransport, allowHalfOpen: false }
     );
-    await socket.opened;
+    await withImapTimeout(socket.opened, IMAP_CONNECT_TIMEOUT_MS, "IMAP connection", () => socket.close().catch(() => undefined));
     let client = new ImapClient(socket);
     await client.readGreeting();
 
     if (input.security === "starttls") {
       await client.command("STARTTLS");
       const tlsSocket = socket.startTls({ expectedServerHostname: input.host });
-      await tlsSocket.opened;
-      client.release();
+      await withImapTimeout(tlsSocket.opened, IMAP_CONNECT_TIMEOUT_MS, "IMAP TLS handshake", () =>
+        tlsSocket.close().catch(() => undefined)
+      );
+      client.releaseLocks();
       client = new ImapClient(tlsSocket);
     }
 
@@ -652,7 +670,7 @@ class ImapClient {
   }
 
   async listFolders(): Promise<ImapFolder[]> {
-    const response = await this.command('LIST "" "*"');
+    const response = await this.command('LIST "" "*"', IMAP_COMMAND_TIMEOUT_MS, "IMAP folder list");
     return response.text
       .split(/\r\n/)
       .map(parseListLine)
@@ -660,31 +678,37 @@ class ImapClient {
   }
 
   async fetchRaw(uid: number): Promise<Uint8Array | null> {
-    const response = await this.command(`UID FETCH ${uid} (BODY.PEEK[])`);
+    const response = await this.command(`UID FETCH ${uid} (BODY.PEEK[])`, IMAP_FETCH_TIMEOUT_MS, "IMAP message fetch");
     return response.literals.sort((a, b) => b.byteLength - a.byteLength)[0] ?? null;
   }
 
   async logout(): Promise<void> {
+    if (this.closed) return;
     try {
-      await this.command("LOGOUT");
+      await this.command("LOGOUT", IMAP_LOGOUT_TIMEOUT_MS, "IMAP logout");
     } catch {
       // The server may close after LOGOUT; close below is enough.
     }
-    this.release();
+    this.releaseLocks();
     await this.socket.close().catch(() => undefined);
+    this.closed = true;
   }
 
   private async readGreeting(): Promise<void> {
-    const line = await this.readLine();
+    const line = await this.readLine(IMAP_COMMAND_TIMEOUT_MS, "IMAP greeting");
     if (!line.toUpperCase().startsWith("* OK")) {
       throw new ApiError(502, "imap_greeting_failed", "IMAP server did not return an OK greeting");
     }
   }
 
-  private async command(command: string): Promise<{ text: string; literals: Uint8Array[] }> {
+  private async command(
+    command: string,
+    timeoutMs = IMAP_COMMAND_TIMEOUT_MS,
+    label = describeImapCommand(command)
+  ): Promise<{ text: string; literals: Uint8Array[] }> {
     const tag = `A${String(this.tagCounter++).padStart(4, "0")}`;
-    await this.writer.write(new TextEncoder().encode(`${tag} ${command}\r\n`));
-    const response = await this.readTagged(tag);
+    await this.withTimeout(this.writer.write(new TextEncoder().encode(`${tag} ${command}\r\n`)), timeoutMs, label);
+    const response = await this.readTagged(tag, timeoutMs, label);
     const statusLine = response.text.split(/\r\n/).find((line) => line.startsWith(`${tag} `)) ?? "";
     if (!new RegExp(`^${tag} OK\\b`, "i").test(statusLine)) {
       throw new ApiError(502, "imap_command_failed", sanitizeImapStatus(statusLine || "IMAP command failed"));
@@ -692,17 +716,17 @@ class ImapClient {
     return response;
   }
 
-  private async readTagged(tag: string): Promise<{ text: string; literals: Uint8Array[] }> {
+  private async readTagged(tag: string, timeoutMs: number, label: string): Promise<{ text: string; literals: Uint8Array[] }> {
     const literals: Uint8Array[] = [];
     let text = "";
 
     for (;;) {
-      const line = await this.readLine();
+      const line = await this.readLine(timeoutMs, label);
       text += `${line}\r\n`;
 
       const literalMatch = line.match(/\{(\d+)\}$/);
       if (literalMatch) {
-        const literal = await this.readBytes(Number.parseInt(literalMatch[1], 10));
+        const literal = await this.readBytes(Number.parseInt(literalMatch[1], 10), timeoutMs, label);
         literals.push(literal);
         text += `{literal:${literal.byteLength}}\r\n`;
       }
@@ -713,7 +737,7 @@ class ImapClient {
     }
   }
 
-  private async readLine(): Promise<string> {
+  private async readLine(timeoutMs: number, label: string): Promise<string> {
     for (;;) {
       const index = indexOfCrlf(this.buffer);
       if (index >= 0) {
@@ -721,21 +745,21 @@ class ImapClient {
         this.buffer = this.buffer.slice(index + 2);
         return new TextDecoder().decode(lineBytes);
       }
-      await this.readMore();
+      await this.readMore(timeoutMs, label);
     }
   }
 
-  private async readBytes(length: number): Promise<Uint8Array> {
+  private async readBytes(length: number, timeoutMs: number, label: string): Promise<Uint8Array> {
     while (this.buffer.byteLength < length) {
-      await this.readMore();
+      await this.readMore(timeoutMs, label);
     }
     const bytes = this.buffer.slice(0, length);
     this.buffer = this.buffer.slice(length);
     return bytes;
   }
 
-  private async readMore(): Promise<void> {
-    const chunk = await this.reader.read();
+  private async readMore(timeoutMs: number, label: string): Promise<void> {
+    const chunk = await this.withTimeout(this.reader.read(), timeoutMs, label);
     if (chunk.done || !chunk.value) {
       throw new ApiError(502, "imap_connection_closed", "IMAP connection closed unexpectedly");
     }
@@ -745,10 +769,63 @@ class ImapClient {
     this.buffer = merged;
   }
 
-  private release(): void {
-    this.reader.releaseLock();
-    this.writer.releaseLock();
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    return withImapTimeout(promise, timeoutMs, label, () => this.forceClose());
   }
+
+  private async forceClose(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    await Promise.allSettled([
+      this.reader.cancel().catch(() => undefined),
+      this.writer.abort().catch(() => undefined),
+      this.socket.close().catch(() => undefined)
+    ]);
+    this.releaseLocks();
+  }
+
+  private releaseLocks(): void {
+    try {
+      this.reader.releaseLock();
+    } catch {
+      // Already released or canceled.
+    }
+    try {
+      this.writer.releaseLock();
+    } catch {
+      // Already released or canceled.
+    }
+  }
+}
+
+async function withImapTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+  onTimeout?: () => void | Promise<void>
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      void onTimeout?.();
+      reject(new ApiError(504, "imap_timeout", `${label} timed out after ${Math.round(timeoutMs / 1000)} seconds`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function describeImapCommand(command: string): string {
+  const upper = command.trim().toUpperCase();
+  if (upper.startsWith("LOGIN")) return "IMAP login";
+  if (upper.startsWith("EXAMINE")) return "IMAP folder open";
+  if (upper.startsWith("UID SEARCH")) return "IMAP search";
+  if (upper.startsWith("UID FETCH")) return "IMAP message fetch";
+  return "IMAP command";
 }
 
 function externalCredential(env: RuntimeEnv, account: ExternalAccountRow): string {

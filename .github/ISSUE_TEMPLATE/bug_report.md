@@ -1,38 +1,56 @@
 ---
 name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
-assignees: ''
-
+about: Report an OmniDock bug in mail, Cloudflare sync, R2 buckets, external accounts, or UI
+title: "[Bug]: "
+labels: bug
+assignees: ""
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Summary
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+What happened?
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Area
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+Choose the closest area:
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+- [ ] Login / setup
+- [ ] Cloudflare sync
+- [ ] Email Routing / rules
+- [ ] Email Sending / compose
+- [ ] External accounts / Gmail / IMAP / SMTP
+- [ ] Inbox / search / archive / delete
+- [ ] Contacts
+- [ ] Signatures
+- [ ] R2 buckets / files / search
+- [ ] Logs
+- [ ] UI / palette / layout
+- [ ] Deployment / bindings / migrations
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+## Steps To Reproduce
 
-**Additional context**
-Add any other context about the problem here.
+1.
+2.
+3.
+
+## Expected Behavior
+
+What did you expect to happen?
+
+## Actual Behavior
+
+What happened instead?
+
+## Environment
+
+- OmniDock version or commit:
+- Deployment: Cloudflare Git deploy / Wrangler deploy / local dev
+- Browser:
+- Cloudflare resources connected: D1 / R2 / Email Sending / Email Routing
+
+## Logs And Screenshots
+
+Paste non-sensitive OmniDock Logs rows, browser console errors, or screenshots.
+
+Do not paste Cloudflare API tokens, admin passwords, Gmail app passwords, OAuth secrets, full email bodies, private account ids, D1 ids, or private R2 object URLs.
+

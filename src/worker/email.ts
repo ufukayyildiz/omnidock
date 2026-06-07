@@ -372,19 +372,37 @@ async function sendExternalSmtpEmail(
   });
 
   try {
-    const smtp = await SmtpClient.open({
-      host: account.smtp_host,
-      port: account.smtp_port,
-      security: account.smtp_security as SmtpSecurity
-    });
     try {
-      await smtp.authenticate(account.username || account.email, externalCredential(env, account));
-      await smtp.send(from, [...to, ...cc, ...bcc], mime);
-    } finally {
-      await smtp.quit();
+      await sendViaSmtp(env, account, from, [...to, ...cc, ...bcc], mime);
+    } catch (error) {
+      if (!shouldRetryImplicitTlsForGmail(account, error)) {
+        throw error;
+      }
+      await recordAudit(env, "external_account.smtp_fallback", account.id, {
+        email: account.email,
+        from: "starttls",
+        to: "ssl",
+        reason: error instanceof Error ? error.message : "SMTP STARTTLS failed"
+      });
+      await sendViaSmtp(
+        env,
+        {
+          ...account,
+          smtp_port: 465,
+          smtp_security: "ssl"
+        },
+        from,
+        [...to, ...cc, ...bcc],
+        mime
+      );
     }
   } catch (error) {
     await Promise.allSettled(attachments.map((attachment) => env.MAIL_BUCKET.delete(attachment.r2Key)));
+    await recordAudit(env, "email.send_failed.external", account.id, {
+      from,
+      to,
+      message: error instanceof Error ? error.message : "External SMTP send failed"
+    }).catch(() => undefined);
     throw error;
   }
 
@@ -424,6 +442,37 @@ async function sendExternalSmtpEmail(
 
   await recordAudit(env, "email.sent.external", stored.id, { from, to, attachments: attachments.length });
   return stored;
+}
+
+async function sendViaSmtp(
+  env: RuntimeEnv,
+  account: ExternalAccountRow,
+  from: string,
+  recipients: string[],
+  mime: string
+): Promise<void> {
+  if (!account.smtp_host || !account.smtp_port) {
+    throw new ApiError(400, "external_smtp_missing", "SMTP host and port are required before sending from this external account");
+  }
+  const smtp = await SmtpClient.open({
+    host: account.smtp_host,
+    port: account.smtp_port,
+    security: account.smtp_security as SmtpSecurity
+  });
+  try {
+    await smtp.authenticate(account.username || account.email, externalCredential(env, account));
+    await smtp.send(from, recipients, mime);
+  } finally {
+    await smtp.quit();
+  }
+}
+
+function shouldRetryImplicitTlsForGmail(account: ExternalAccountRow, error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.code !== "smtp_timeout") return false;
+  if (!/tls handshake/i.test(error.message)) return false;
+  if ((account.smtp_security ?? "").toLowerCase() !== "starttls") return false;
+  const host = (account.smtp_host ?? "").toLowerCase();
+  return account.provider === "gmail" || host.includes("gmail.com");
 }
 
 async function prepareThreadHeaders(

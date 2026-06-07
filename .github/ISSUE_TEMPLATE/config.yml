@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/security/advisories/new
+    about: Please use private vulnerability reporting when available. Do not post secrets or exploit details in public issues.
+  - name: Cloudflare Workers docs
+    url: https://developers.cloudflare.com/workers/
+    about: Use Cloudflare's official docs for platform-specific Worker, D1, R2, and Email Routing behavior.

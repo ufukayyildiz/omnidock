@@ -15,6 +15,8 @@ import {
 } from "./cloudflare";
 import {
   archiveThread,
+  deleteAuditLog,
+  deleteAuditLogs,
   deleteContact,
   deleteExternalAccount,
   deleteThread,
@@ -196,6 +198,24 @@ export async function handleApi(
       const limit = Number.isFinite(rawLimit) ? rawLimit : 250;
       const query = url.searchParams.get("q") ?? undefined;
       return json({ ok: true, logs: await listAuditLogs(env, { limit, query }) });
+    }
+
+    if (url.pathname === "/api/audit-logs/delete") {
+      if (request.method !== "POST") return methodNotAllowed();
+      const body = await readJson(request);
+      const all = optionalBoolean(body, "all") ?? false;
+      const ids = all ? [] : stringArray(body, "ids", 500);
+      const deleted = await deleteAuditLogs(env, { all, ids });
+      await recordAudit(env, all ? "audit_logs.cleared" : "audit_logs.deleted", null, { deleted });
+      return json({ ok: true, deleted });
+    }
+
+    const auditLogMatch = url.pathname.match(/^\/api\/audit-logs\/([^/]+)$/);
+    if (auditLogMatch) {
+      if (request.method !== "DELETE") return methodNotAllowed();
+      const deleted = await deleteAuditLog(env, auditLogMatch[1]);
+      await recordAudit(env, "audit_log.deleted", auditLogMatch[1], { deleted });
+      return json({ ok: true, deleted });
     }
 
     if (url.pathname === "/api/auth/password") {
@@ -509,7 +529,24 @@ export async function handleApi(
 
     if (url.pathname === "/api/buckets/search") {
       if (request.method !== "GET") return methodNotAllowed();
-      return json(await searchBucketObjects(env, url));
+      const result = await searchBucketObjects(env, url);
+      if (env.DB && (result.timedOut || result.contentErrors > 0 || result.durationMs > 8000)) {
+        ctx.waitUntil(
+          recordAudit(env, "bucket.search_warning", result.bucket?.id ?? null, {
+            bucket: result.bucket?.name ?? "all",
+            contentErrors: result.contentErrors,
+            contentScanned: result.contentScanned,
+            durationMs: result.durationMs,
+            query: result.query.slice(0, 120),
+            results: result.results.length,
+            scanned: result.scanned,
+            scope: result.scope,
+            timedOut: result.timedOut,
+            truncated: result.truncated
+          })
+        );
+      }
+      return json(result);
     }
 
     const bucketObjectsMatch = url.pathname.match(/^\/api\/buckets\/([^/]+)\/objects$/);
@@ -743,6 +780,15 @@ const MAX_BUCKET_SEARCH_SCAN = 1200;
 const MAX_BUCKET_TEXT_SEARCH_FILES = 80;
 const MAX_BUCKET_TEXT_SEARCH_BYTES = 2 * 1024 * 1024;
 const MAX_BUCKET_UNKNOWN_TEXT_SEARCH_BYTES = 256 * 1024;
+const MAX_BUCKET_SEARCH_TIME_MS = 15_000;
+const MAX_BUCKET_TEXT_FILE_TIMEOUT_MS = 3_500;
+
+class BucketSearchTimeoutError extends Error {
+  constructor(label: string) {
+    super(`Timed out while reading ${label}`);
+    this.name = "BucketSearchTimeoutError";
+  }
+}
 
 function listAvailableBuckets(env: RuntimeEnv): BucketInfo[] {
   const configured = Boolean(env.MAIL_BUCKET);
@@ -841,6 +887,8 @@ function getBucketBinding(env: RuntimeEnv, bucketId: string): BucketBinding {
 }
 
 async function searchBucketObjects(env: RuntimeEnv, url: URL) {
+  const startedAt = Date.now();
+  const deadlineMs = startedAt + MAX_BUCKET_SEARCH_TIME_MS;
   const query = (url.searchParams.get("q") ?? "").trim();
   if (query.length < 2) {
     throw new ApiError(400, "invalid_search", "Search query must be at least 2 characters.");
@@ -867,33 +915,81 @@ async function searchBucketObjects(env: RuntimeEnv, url: URL) {
   }> = [];
   let scanned = 0;
   let contentScanned = 0;
+  let contentErrors = 0;
+  let timedOut = false;
   let truncated = false;
   const resultKeys = new Set<string>();
+  const markContentError = (error: unknown) => {
+    contentErrors += 1;
+    if (error instanceof BucketSearchTimeoutError) {
+      timedOut = true;
+    }
+  };
 
   if (includeText) {
-    for (const indexed of await searchBucketTextIndexes(env, bucketBindings.map((bucket) => bucket.info), normalizedQuery)) {
-      const id = `${indexed.bucketId}:${indexed.key}`;
-      if (resultKeys.has(id)) continue;
-      results.push(indexed);
-      resultKeys.add(id);
-      if (results.length >= MAX_BUCKET_SEARCH_RESULTS) {
-        truncated = true;
-        break;
+    try {
+      const indexedRows = await withBucketSearchTimeout(
+        searchBucketTextIndexes(env, bucketBindings.map((bucket) => bucket.info), normalizedQuery),
+        bucketSearchRemainingMs(deadlineMs),
+        "bucket text index"
+      );
+      for (const indexed of indexedRows) {
+        if (bucketSearchExpired(deadlineMs)) {
+          timedOut = true;
+          truncated = true;
+          break;
+        }
+        const id = `${indexed.bucketId}:${indexed.key}`;
+        if (resultKeys.has(id)) continue;
+        results.push(indexed);
+        resultKeys.add(id);
+        if (results.length >= MAX_BUCKET_SEARCH_RESULTS) {
+          truncated = true;
+          break;
+        }
       }
+    } catch (error) {
+      markContentError(error);
     }
   }
 
   for (const bucket of bucketBindings) {
-    if (results.length >= MAX_BUCKET_SEARCH_RESULTS) break;
+    if (results.length >= MAX_BUCKET_SEARCH_RESULTS || bucketSearchExpired(deadlineMs)) {
+      timedOut = bucketSearchExpired(deadlineMs);
+      if (timedOut) truncated = true;
+      break;
+    }
     let cursor: string | undefined;
     do {
-      const page = await bucket.bucket.list({
-        cursor,
-        include: ["httpMetadata"],
-        limit: 200
-      });
+      if (bucketSearchExpired(deadlineMs)) {
+        timedOut = true;
+        truncated = true;
+        break;
+      }
+
+      let page: Awaited<ReturnType<R2Bucket["list"]>>;
+      try {
+        page = await withBucketSearchTimeout(
+          bucket.bucket.list({
+            cursor,
+            include: ["httpMetadata"],
+            limit: 200
+          }),
+          bucketSearchRemainingMs(deadlineMs),
+          `${bucket.info.name} object list`
+        );
+      } catch (error) {
+        markContentError(error);
+        truncated = true;
+        break;
+      }
 
       for (const object of page.objects) {
+        if (bucketSearchExpired(deadlineMs)) {
+          timedOut = true;
+          truncated = true;
+          break;
+        }
         scanned += 1;
         const keySearch = normalizeSearchText(object.key);
         const nameSearch = normalizeSearchText(filenameFromR2Key(object.key));
@@ -909,8 +1005,13 @@ async function searchBucketObjects(env: RuntimeEnv, url: URL) {
         ) {
           contentScanned += 1;
           try {
-            contentSnippet = await findTextMatch(bucket.bucket, object, normalizedQuery);
-          } catch {
+            contentSnippet = await withBucketSearchTimeout(
+              findTextMatch(bucket.bucket, object, normalizedQuery, deadlineMs),
+              Math.min(MAX_BUCKET_TEXT_FILE_TIMEOUT_MS, bucketSearchRemainingMs(deadlineMs)),
+              object.key
+            );
+          } catch (error) {
+            markContentError(error);
             contentSnippet = null;
           }
         }
@@ -935,17 +1036,18 @@ async function searchBucketObjects(env: RuntimeEnv, url: URL) {
         }
       }
 
-      if (results.length >= MAX_BUCKET_SEARCH_RESULTS || scanned >= MAX_BUCKET_SEARCH_SCAN) {
+      if (timedOut || results.length >= MAX_BUCKET_SEARCH_RESULTS || scanned >= MAX_BUCKET_SEARCH_SCAN) {
         break;
       }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
 
-    if (results.length >= MAX_BUCKET_SEARCH_RESULTS || scanned >= MAX_BUCKET_SEARCH_SCAN) {
+    if (timedOut || results.length >= MAX_BUCKET_SEARCH_RESULTS || scanned >= MAX_BUCKET_SEARCH_SCAN) {
       break;
     }
   }
 
+  const durationMs = Date.now() - startedAt;
   return {
     ok: true,
     query,
@@ -954,8 +1056,41 @@ async function searchBucketObjects(env: RuntimeEnv, url: URL) {
     results,
     scanned,
     contentScanned,
+    contentErrors,
+    durationMs,
+    timedOut,
     truncated
   };
+}
+
+function bucketSearchExpired(deadlineMs: number): boolean {
+  return Date.now() >= deadlineMs;
+}
+
+function bucketSearchRemainingMs(deadlineMs: number): number {
+  return Math.max(250, deadlineMs - Date.now());
+}
+
+async function withBucketSearchTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new BucketSearchTimeoutError(label)), Math.max(250, timeoutMs));
+      })
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+function assertBucketSearchBudget(deadlineMs: number, label: string): void {
+  if (bucketSearchExpired(deadlineMs)) {
+    throw new BucketSearchTimeoutError(label);
+  }
 }
 
 type BucketTextIndexRow = {
@@ -1115,12 +1250,15 @@ function isMissingBucketTextIndexTable(error: unknown): boolean {
   return error instanceof Error && /bucket_text_index|no such table/i.test(error.message);
 }
 
-async function findTextMatch(bucket: R2Bucket, object: R2Object, normalizedQuery: string): Promise<string | null> {
+async function findTextMatch(bucket: R2Bucket, object: R2Object, normalizedQuery: string, deadlineMs: number): Promise<string | null> {
+  assertBucketSearchBudget(deadlineMs, object.key);
   const body = await bucket.get(object.key);
   if (!body) return null;
+  assertBucketSearchBudget(deadlineMs, object.key);
   const text = isPdfSearchCandidate(object)
-    ? await extractPdfText(await body.arrayBuffer())
+    ? await extractPdfText(await body.arrayBuffer(), deadlineMs)
     : await body.text();
+  assertBucketSearchBudget(deadlineMs, object.key);
   if (!text.trim()) return null;
   const normalizedText = normalizeSearchText(text);
   const index = normalizedText.indexOf(normalizedQuery);
@@ -1205,24 +1343,27 @@ function isPdfSearchCandidate(object: R2Object): boolean {
   return contentType === "application/pdf" || object.key.toLowerCase().endsWith(".pdf");
 }
 
-async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+async function extractPdfText(buffer: ArrayBuffer, deadlineMs: number): Promise<string> {
+  assertBucketSearchBudget(deadlineMs, "PDF text extraction");
   const bytes = new Uint8Array(buffer);
   const raw = decodePdfBytes(bytes);
   const chunks = [raw];
 
-  for (const stream of await extractPdfStreams(bytes, raw)) {
+  for (const stream of await extractPdfStreams(bytes, raw, deadlineMs)) {
+    assertBucketSearchBudget(deadlineMs, "PDF stream extraction");
     chunks.push(decodePdfBytes(stream));
   }
 
   const source = chunks.join("\n");
-  return extractPdfOperatorText(source, parsePdfUnicodeMap(source));
+  return extractPdfOperatorText(source, parsePdfUnicodeMap(source, deadlineMs), deadlineMs);
 }
 
-async function extractPdfStreams(bytes: Uint8Array, raw: string): Promise<Uint8Array[]> {
+async function extractPdfStreams(bytes: Uint8Array, raw: string, deadlineMs: number): Promise<Uint8Array[]> {
   const streams: Uint8Array[] = [];
   let offset = 0;
 
   while (offset < raw.length) {
+    assertBucketSearchBudget(deadlineMs, "PDF streams");
     const streamIndex = raw.indexOf("stream", offset);
     if (streamIndex < 0) break;
     const endIndex = raw.indexOf("endstream", streamIndex + 6);
@@ -1243,7 +1384,7 @@ async function extractPdfStreams(bytes: Uint8Array, raw: string): Promise<Uint8A
     const dictionary = raw.slice(Math.max(0, streamIndex - 2000), streamIndex);
     const streamBytes = bytes.slice(dataStart, dataEnd);
     if (/\/Filter\s*(?:\/FlateDecode|\[[^\]]*\/FlateDecode)/.test(dictionary)) {
-      const inflated = await inflatePdfStream(streamBytes);
+      const inflated = await inflatePdfStream(streamBytes, deadlineMs);
       if (inflated) streams.push(inflated);
     } else {
       streams.push(streamBytes);
@@ -1255,25 +1396,31 @@ async function extractPdfStreams(bytes: Uint8Array, raw: string): Promise<Uint8A
   return streams;
 }
 
-async function inflatePdfStream(bytes: Uint8Array): Promise<Uint8Array | null> {
+async function inflatePdfStream(bytes: Uint8Array, deadlineMs: number): Promise<Uint8Array | null> {
   if (typeof DecompressionStream === "undefined") return null;
   try {
+    assertBucketSearchBudget(deadlineMs, "PDF inflate");
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream("deflate"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  } catch {
+    const inflated = new Uint8Array(await new Response(stream).arrayBuffer());
+    assertBucketSearchBudget(deadlineMs, "PDF inflate");
+    return inflated;
+  } catch (error) {
+    if (error instanceof BucketSearchTimeoutError) throw error;
     return null;
   }
 }
 
-function extractPdfOperatorText(source: string, unicodeMap = new Map<string, string>()): string {
+function extractPdfOperatorText(source: string, unicodeMap = new Map<string, string>(), deadlineMs: number): string {
   const parts: string[] = [];
 
   for (const match of source.matchAll(/\[((?:.|\n|\r)*?)\]\s*TJ/g)) {
+    assertBucketSearchBudget(deadlineMs, "PDF text operators");
     parts.push(extractPdfStrings(match[1], unicodeMap).join(""));
   }
 
   for (const match of source.matchAll(/(\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>)\s*(?:Tj|'|")/g)) {
+    assertBucketSearchBudget(deadlineMs, "PDF text operators");
     parts.push(decodePdfTokenString(match[1], unicodeMap));
   }
 
@@ -1364,16 +1511,18 @@ function decodePdfHexString(token: string, unicodeMap = new Map<string, string>(
   return decodePdfStringBytes(bytes);
 }
 
-function parsePdfUnicodeMap(source: string): Map<string, string> {
+function parsePdfUnicodeMap(source: string, deadlineMs: number): Map<string, string> {
   const map = new Map<string, string>();
 
   for (const block of source.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+    assertBucketSearchBudget(deadlineMs, "PDF unicode map");
     for (const match of block[1].matchAll(/<([\dA-Fa-f\s]+)>\s+<([\dA-Fa-f\s]+)>/g)) {
       map.set(cleanPdfHex(match[1]), decodePdfUnicodeHex(match[2]));
     }
   }
 
   for (const block of source.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    assertBucketSearchBudget(deadlineMs, "PDF unicode map");
     for (const match of block[1].matchAll(/<([\dA-Fa-f\s]+)>\s+<([\dA-Fa-f\s]+)>\s+\[((?:\s*<[\dA-Fa-f\s]+>)+)\]/g)) {
       const start = Number.parseInt(cleanPdfHex(match[1]), 16);
       const end = Number.parseInt(cleanPdfHex(match[2]), 16);
@@ -1728,6 +1877,22 @@ function readContactList(
       throw new ApiError(400, "invalid_contact", "Each contact must be an object");
     }
     return readContactInput(item, "upload");
+  });
+}
+
+function stringArray(body: Record<string, unknown>, field: string, maxItems: number): string[] {
+  const value = body[field];
+  if (!Array.isArray(value)) {
+    throw new ApiError(400, "invalid_field", `${field} must be an array`);
+  }
+  if (value.length > maxItems) {
+    throw new ApiError(400, "too_many_items", `${field} can contain up to ${maxItems} items`);
+  }
+  return value.map((item) => {
+    if (typeof item !== "string" || !item.trim()) {
+      throw new ApiError(400, "invalid_field", `${field} must contain non-empty strings`);
+    }
+    return item.trim();
   });
 }
 

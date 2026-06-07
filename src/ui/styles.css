@@ -1032,10 +1032,10 @@ button:hover:not(:disabled) {
 
 .log-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto auto auto;
+  grid-template-columns: minmax(260px, 1fr) repeat(7, auto);
   align-items: center;
   gap: 8px;
-  min-width: min(720px, 100%);
+  min-width: min(1040px, 100%);
 }
 
 .search-wrap.compact {
@@ -1058,7 +1058,7 @@ button:hover:not(:disabled) {
 
 .log-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1120px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1083,22 +1083,32 @@ button:hover:not(:disabled) {
 
 .log-table th:nth-child(1),
 .log-table td:nth-child(1) {
-  width: 190px;
+  width: 46px;
 }
 
 .log-table th:nth-child(2),
 .log-table td:nth-child(2) {
-  width: 118px;
+  width: 190px;
 }
 
 .log-table th:nth-child(3),
 .log-table td:nth-child(3) {
-  width: 210px;
+  width: 118px;
 }
 
 .log-table th:nth-child(4),
 .log-table td:nth-child(4) {
+  width: 210px;
+}
+
+.log-table th:nth-child(5),
+.log-table td:nth-child(5) {
   width: 220px;
+}
+
+.log-table th:nth-child(7),
+.log-table td:nth-child(7) {
+  width: 92px;
 }
 
 .log-table tbody tr {
@@ -1149,6 +1159,41 @@ button:hover:not(:disabled) {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.check-button {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--control);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.check-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.log-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.icon-button.danger {
+  color: var(--danger);
+}
+
+.icon-button.danger:hover {
+  border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  color: var(--danger);
 }
 
 .bucket-shell {

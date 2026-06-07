@@ -211,6 +211,9 @@ export type BucketSearchPayload = {
   results: BucketSearchResultRow[];
   scanned: number;
   contentScanned: number;
+  contentErrors: number;
+  durationMs: number;
+  timedOut: boolean;
   truncated: boolean;
 };
 

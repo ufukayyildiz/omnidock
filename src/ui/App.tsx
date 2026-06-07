@@ -180,8 +180,8 @@ const externalProviderPresets: Record<
     imapPort: 993,
     imapSecurity: "ssl",
     smtpHost: "smtp.gmail.com",
-    smtpPort: 587,
-    smtpSecurity: "starttls"
+    smtpPort: 465,
+    smtpSecurity: "ssl"
   },
   outlook: {
     label: "Outlook",
@@ -3246,6 +3246,8 @@ function LogsView({
   const [appliedQuery, setAppliedQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const dialog = useAppDialog();
 
   const loadLogs = useCallback(
     async (nextQuery: string) => {
@@ -3255,6 +3257,7 @@ function LogsView({
       try {
         const payload = await api.auditLogs({ query: nextQuery, limit: 350 });
         setLogs(payload.logs);
+        setSelectedIds((current) => new Set([...current].filter((id) => payload.logs.some((log) => log.id === id))));
       } catch (loadError) {
         const message = readError(loadError);
         setError(message);
@@ -3281,6 +3284,118 @@ function LogsView({
     setQuery("");
     setAppliedQuery("");
     void loadLogs("");
+  }
+
+  const selectedLogs = logs.filter((log) => selectedIds.has(log.id));
+  const allVisibleSelected = logs.length > 0 && selectedIds.size === logs.length;
+
+  function toggleAllVisible() {
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(logs.map((log) => log.id)));
+  }
+
+  function toggleLog(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function exportLogs(format: "csv" | "json", rows = logs) {
+    if (rows.length === 0) {
+      onNotice("No logs to export");
+      return;
+    }
+
+    const body = format === "json" ? JSON.stringify(rows, null, 2) : logsToCsv(rows);
+    downloadTextFile(`omnidock-logs-${new Date().toISOString().slice(0, 10)}.${format}`, body, format === "json" ? "application/json" : "text/csv");
+    onNotice(`Exported ${rows.length} log row${rows.length === 1 ? "" : "s"}`);
+  }
+
+  async function deleteOne(log: AuditLogRow) {
+    if (!api) return;
+    const confirmed = await dialog.confirm({
+      title: "Delete log row",
+      message: `Delete "${humanizeAuditAction(log.action)}" from the database?`,
+      confirmLabel: "Delete",
+      tone: "danger"
+    });
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const result = await api.deleteAuditLog(log.id);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(log.id);
+        return next;
+      });
+      await loadLogs(appliedQuery);
+      onNotice(`Deleted ${result.deleted} log row`);
+    } catch (deleteError) {
+      const message = readError(deleteError);
+      setError(message);
+      onNotice(`Delete failed: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteSelected() {
+    if (!api || selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    const confirmed = await dialog.confirm({
+      title: "Delete selected logs",
+      message: `Delete ${count} selected log row${count === 1 ? "" : "s"} from the database?`,
+      confirmLabel: "Delete selected",
+      tone: "danger"
+    });
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const result = await api.deleteAuditLogs([...selectedIds]);
+      setSelectedIds(new Set());
+      await loadLogs(appliedQuery);
+      onNotice(`Deleted ${result.deleted} log rows`);
+    } catch (deleteError) {
+      const message = readError(deleteError);
+      setError(message);
+      onNotice(`Delete failed: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function clearAllLogs() {
+    if (!api) return;
+    const confirmed = await dialog.confirm({
+      title: "Clear all logs",
+      message: "Delete every log row from the database? A new cleanup log row will be written after the clear.",
+      confirmLabel: "Clear logs",
+      tone: "danger"
+    });
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const result = await api.clearAuditLogs();
+      setSelectedIds(new Set());
+      await loadLogs("");
+      setQuery("");
+      setAppliedQuery("");
+      onNotice(`Cleared ${result.deleted} log rows`);
+    } catch (deleteError) {
+      const message = readError(deleteError);
+      setError(message);
+      onNotice(`Clear failed: ${message}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -3314,6 +3429,22 @@ function LogsView({
               {loading ? <Loader2 className="spin-icon" size={15} /> : <RefreshCw size={15} />}
               Refresh
             </button>
+            <button className="button" type="button" onClick={() => exportLogs("csv")} disabled={loading || logs.length === 0}>
+              <Download size={15} />
+              CSV
+            </button>
+            <button className="button" type="button" onClick={() => exportLogs("json", selectedLogs.length ? selectedLogs : logs)} disabled={loading || logs.length === 0}>
+              <FileText size={15} />
+              JSON
+            </button>
+            <button className="button danger" type="button" onClick={() => void deleteSelected()} disabled={loading || selectedIds.size === 0}>
+              <Trash2 size={15} />
+              Delete selected
+            </button>
+            <button className="button danger" type="button" onClick={() => void clearAllLogs()} disabled={loading || logs.length === 0}>
+              <Trash2 size={15} />
+              Clear all
+            </button>
           </form>
         </header>
         {error ? (
@@ -3332,11 +3463,17 @@ function LogsView({
             <table className="log-table">
               <thead>
                 <tr>
+                  <th>
+                    <button className="check-button" type="button" onClick={toggleAllVisible} title={allVisibleSelected ? "Unselect all" : "Select all"}>
+                      {allVisibleSelected ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+                    </button>
+                  </th>
                   <th>Time</th>
                   <th>Status</th>
                   <th>Action</th>
                   <th>Target</th>
                   <th>Details</th>
+                  <th>Tools</th>
                 </tr>
               </thead>
               <tbody>
@@ -3346,6 +3483,16 @@ function LogsView({
                   const StatusIcon = status.icon;
                   return (
                     <tr className={status.tone === "error" ? "error-row" : ""} key={log.id}>
+                      <td>
+                        <button
+                          className="check-button"
+                          type="button"
+                          onClick={() => toggleLog(log.id)}
+                          title={selectedIds.has(log.id) ? "Unselect row" : "Select row"}
+                        >
+                          {selectedIds.has(log.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+                        </button>
+                      </td>
                       <td>
                         <time>{formatDate(log.created_at)}</time>
                       </td>
@@ -3364,6 +3511,16 @@ function LogsView({
                       </td>
                       <td>
                         <span>{summarizeAuditMetadata(metadata)}</span>
+                      </td>
+                      <td>
+                        <div className="log-row-actions">
+                          <button className="icon-button" type="button" onClick={() => exportLogs("json", [log])} title="Export row">
+                            <Download size={14} />
+                          </button>
+                          <button className="icon-button danger" type="button" onClick={() => void deleteOne(log)} title="Delete row">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -3456,7 +3613,15 @@ function BucketsView({
   const [searchIncludesText, setSearchIncludesText] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<BucketSearchResultRow[] | null>(null);
-  const [searchMeta, setSearchMeta] = useState<{ scanned: number; contentScanned: number; truncated: boolean } | null>(null);
+  const [searchMeta, setSearchMeta] = useState<{
+    scanned: number;
+    contentScanned: number;
+    contentErrors: number;
+    durationMs: number;
+    includedText: boolean;
+    timedOut: boolean;
+    truncated: boolean;
+  } | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const dialog = useAppDialog();
   const bucketOptions = bucketOptionsForSelect(buckets);
@@ -3525,10 +3690,24 @@ function BucketsView({
       setSearchMeta({
         scanned: data.scanned,
         contentScanned: data.contentScanned,
+        contentErrors: data.contentErrors,
+        durationMs: data.durationMs,
+        includedText: searchIncludesText,
+        timedOut: data.timedOut,
         truncated: data.truncated
       });
       setSelectedKey(data.results[0] ? bucketObjectSelectionId(data.results[0]) : null);
-      onNotice(data.truncated ? `Search returned first ${data.results.length} results` : `Search found ${data.results.length} result${data.results.length === 1 ? "" : "s"}`);
+      const details = [
+        `${(data.durationMs / 1000).toFixed(1)}s`,
+        data.timedOut ? "time limit reached" : "",
+        data.contentErrors > 0 ? `${data.contentErrors} scan issue${data.contentErrors === 1 ? "" : "s"}` : "",
+        data.truncated ? "more available" : ""
+      ].filter(Boolean);
+      onNotice(
+        `Search found ${data.results.length} result${data.results.length === 1 ? "" : "s"}${
+          details.length > 0 ? ` (${details.join(", ")})` : ""
+        }`
+      );
     } catch (error) {
       onNotice(readError(error));
     } finally {
@@ -3676,14 +3855,14 @@ function BucketsView({
             className={searchIncludesText ? "button mini active" : "button mini"}
             type="button"
             onClick={() => setSearchIncludesText((current) => !current)}
-            title="Search inside small text files and searchable PDFs"
+            title="Search embedded text in text files and searchable PDFs. This is not OCR."
           >
             <FileText size={14} />
-            Text
+            Text/PDF
           </button>
           <button className="button primary" type="submit" disabled={searching || searchQuery.trim().length < 2}>
-            {searching ? <Loader2 size={15} /> : <Search size={15} />}
-            Search
+            {searching ? <Loader2 className="spin-icon" size={15} /> : <Search size={15} />}
+            {searching ? "Searching" : "Search"}
           </button>
           {searchResults ? (
             <button className="button ghost" type="button" onClick={clearBucketSearch}>
@@ -3762,7 +3941,10 @@ function BucketsView({
               {searchMeta ? (
                 <small>
                   {searchMeta.scanned} scanned
-                  {searchIncludesText ? ` · ${searchMeta.contentScanned} content files` : ""}
+                  {searchMeta.includedText ? ` · ${searchMeta.contentScanned} content files` : ""}
+                  {` · ${(searchMeta.durationMs / 1000).toFixed(1)}s`}
+                  {searchMeta.timedOut ? " · time limit" : ""}
+                  {searchMeta.contentErrors > 0 ? ` · ${searchMeta.contentErrors} issues` : ""}
                   {searchMeta.truncated ? " · more available" : ""}
                 </small>
               ) : null}
@@ -3773,7 +3955,7 @@ function BucketsView({
             {(loading && objects.length === 0) || searching ? (
               <div className="preview-loading compact">
                 <Loader2 size={18} />
-                <span>{searching ? "Searching buckets" : "Loading objects"}</span>
+                <span>{searching ? (searchIncludesText ? "Searching text/PDF" : "Searching buckets") : "Loading objects"}</span>
               </div>
             ) : null}
             {displayedObjects.map((object) => (
@@ -5169,9 +5351,9 @@ function humanizeAuditAction(action: string): string {
 }
 
 function summarizeAuditMetadata(metadata: Record<string, unknown>): string {
-  const hidden = new Set(["password", "token", "secret", "contentbase64", "html", "text"]);
+  const hiddenWords = ["password", "token", "secret", "contentbase64", "html", "text"];
   const entries = Object.entries(metadata)
-    .filter(([key]) => !hidden.has(key.toLowerCase()))
+    .filter(([key]) => !hiddenWords.some((word) => key.toLowerCase().includes(word)))
     .slice(0, 8);
 
   if (entries.length === 0) return "No details";
@@ -5187,6 +5369,35 @@ function formatAuditValue(value: unknown): string {
   if (typeof value === "object") return JSON.stringify(value).slice(0, 180);
   if (typeof value === "boolean") return value ? "yes" : "no";
   return String(value).slice(0, 220);
+}
+
+function logsToCsv(rows: AuditLogRow[]): string {
+  const header = ["id", "created_at", "status", "action", "actor", "target", "metadata_json"];
+  const body = rows.map((row) => {
+    const metadata = parseAuditMetadata(row.metadata_json);
+    const status = auditLogStatus(row, metadata).label;
+    return [row.id, row.created_at, status, row.action, row.actor, row.target ?? "", row.metadata_json]
+      .map(csvCell)
+      .join(",");
+  });
+  return [header.join(","), ...body].join("\n");
+}
+
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function downloadTextFile(filename: string, body: string, type: string): void {
+  const blob = new Blob([body], { type: `${type};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function formatDate(value: string): string {

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">OmniDock social preview</title>
+  <desc id="desc">Open-source Cloudflare email dashboard for Workers, Email Routing, Email Sending, D1, and R2.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07120d"/>
+      <stop offset="0.52" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#10281b"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11251b"/>
+      <stop offset="1" stop-color="#0b1320"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <path d="M0 96H1280M0 192H1280M0 288H1280M0 384H1280M0 480H1280M0 576H1280M96 0V640M192 0V640M288 0V640M384 0V640M480 0V640M576 0V640M672 0V640M768 0V640M864 0V640M960 0V640M1056 0V640M1152 0V640" stroke="#22c55e" stroke-opacity="0.16"/>
+
+  <rect x="96" y="96" width="1088" height="448" rx="24" fill="url(#panel)" stroke="#38bdf8" stroke-opacity="0.38" filter="url(#shadow)"/>
+  <rect x="128" y="128" width="1024" height="54" rx="10" fill="#0b1220" stroke="#22c55e" stroke-opacity="0.55"/>
+  <circle cx="160" cy="155" r="7" fill="#22c55e"/>
+  <circle cx="184" cy="155" r="7" fill="#38bdf8"/>
+  <circle cx="208" cy="155" r="7" fill="#f59e0b"/>
+  <text x="240" y="162" fill="#a7f3d0" font-family="SFMono-Regular, Consolas, monospace" font-size="20">omnidock / cloudflare email operations</text>
+
+  <g transform="translate(150 236)">
+    <rect x="0" y="0" width="84" height="84" rx="16" fill="#0f766e"/>
+    <path d="M18 26L42 46L66 26" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M18 30V60H66V30" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="264" y="284" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="74" font-weight="800">OmniDock</text>
+  <text x="268" y="338" fill="#93c5fd" font-family="SFMono-Regular, Consolas, monospace" font-size="28">Open-source Cloudflare email dashboard</text>
+  <text x="268" y="392" fill="#d1fae5" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28">Workers · Email Routing · Email Sending · D1 · R2</text>
+
+  <g fill="#0b1220" stroke="#22c55e" stroke-opacity="0.75">
+    <rect x="268" y="434" width="158" height="42" rx="8"/>
+    <rect x="442" y="434" width="142" height="42" rx="8"/>
+    <rect x="600" y="434" width="154" height="42" rx="8"/>
+    <rect x="770" y="434" width="184" height="42" rx="8"/>
+  </g>
+  <g fill="#bbf7d0" font-family="SFMono-Regular, Consolas, monospace" font-size="18" font-weight="700">
+    <text x="296" y="461">support inbox</text>
+    <text x="470" y="461">gmail sync</text>
+    <text x="628" y="461">r2 manager</text>
+    <text x="798" y="461">self-hosted</text>
+  </g>
+
+  <text x="984" y="502" fill="#94a3b8" font-family="SFMono-Regular, Consolas, monospace" font-size="22">omnidock.org</text>
+</svg>

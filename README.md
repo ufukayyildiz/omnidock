@@ -1,32 +1,91 @@
 # OmniDock
 
-OmniDock is an open-source, self-hosted email operations dashboard for Cloudflare Workers, Cloudflare Email Routing, Cloudflare Email Sending, D1, and R2.
+<p align="center">
+  <strong>Self-hosted email operations for Cloudflare Workers, Email Routing, Email Sending, D1, and R2.</strong>
+</p>
 
-It turns a Cloudflare account into a compact Linux-style work dock for domain email, support inboxes, contacts, signatures, attachments, and R2 files.
+<p align="center">
+  <a href="https://omnidock.org">Website</a>
+  ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#security-notes">Security</a>
+  ·
+  <a href="docs/GITHUB_SEO.md">GitHub SEO checklist</a>
+</p>
+
+<p align="center">
+  <img alt="Cloudflare Workers" src="https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white">
+  <img alt="Cloudflare D1" src="https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white">
+  <img alt="Cloudflare R2" src="https://img.shields.io/badge/Cloudflare-R2-F38020?logo=cloudflare&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111827">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-16a34a">
+</p>
+
+OmniDock is an open-source Cloudflare email dashboard for teams that want a private support inbox, multi-domain email routing, Cloudflare Email Sending, Cloudflare Email Routing, R2 file management, contacts, signatures, and external inbox sync in one Workers app.
+
+Think of it as a compact Linux-style command center for domain email: not a hosted mailbox provider, not a SaaS lock-in, and not a black box. You fork it, connect your own Cloudflare account, keep your own D1/R2 data, and run the dashboard on your own Worker.
 
 Website: [omnidock.org](https://omnidock.org)
+
+## Why OmniDock
+
+Cloudflare gives developers strong primitives for email and storage, but the operational workflow is split across zones, Email Routing rules, Email Sending checks, D1 tables, R2 buckets, external inboxes, and manual dashboard work. OmniDock brings those pieces into one focused admin UI.
+
+Use OmniDock when you need:
+
+- A self-hosted Cloudflare support inbox for `support@`, `info@`, `billing@`, or project addresses.
+- Multi-domain email routing across several Cloudflare zones.
+- A private email dashboard for agencies, internal teams, SaaS side projects, or product support.
+- Cloudflare Email Routing and Email Sending automation without building your own admin panel.
+- R2 attachment storage and a lightweight R2 bucket manager next to email.
+- Gmail, Outlook, Yahoo, iCloud, or custom IMAP/SMTP profiles pulled into the same workspace.
+- A public, fork-first repository that avoids committing account ids, D1 ids, bucket names, tokens, passwords, or personal domains.
+
+OmniDock is not an IMAP/POP3 server and does not replace a full hosted mailbox provider. It is best for private support inboxes, project inboxes, catch-all workflows, domain operations, and lightweight email management that already lives on Cloudflare.
+
+## Features
+
+| Area | What OmniDock provides |
+| --- | --- |
+| Inbound email | Cloudflare Worker `email()` handler, Email Routing support, mailbox rules, catch-all routing |
+| Outbound email | Cloudflare Email Sending plus external SMTP sending for configured accounts |
+| Storage | D1 metadata, R2 raw messages, R2 attachments, R2 manual files, extra R2 buckets |
+| Inbox workflow | Inbox, sent, archive, delete, read state, thread view, mailbox scope, global search |
+| Compose | Rich text, links, colors, signatures, attachments, attachment loading guards |
+| Domains and rules | Cloudflare zone sync, sending/routing status, default domain, mailbox routing rules |
+| Contacts | Manual contacts, CSV/TXT/VCF import, phone, company, tags, notes, edit/delete |
+| Signatures | Mailbox-based rich signatures with text styling and links |
+| External accounts | Gmail and custom IMAP/SMTP profiles with Worker-secret credential references |
+| Buckets | Browse R2 folders, preview files, upload, download, delete, search paths and text indexes |
+| Logs | Audit log table for sync, sending, errors, warnings, exports, and cleanup |
+| UI | Linux, Ubuntu, Fedora, Plasma, and Graphite palettes with compact desktop layout |
 
 ## What It Does
 
 - Receive inbound mail through a Cloudflare Worker `email()` handler.
 - Store message and thread metadata in Cloudflare D1.
 - Store raw MIME messages, attachments, and manual files in Cloudflare R2.
-- Send replies and outbound messages through Cloudflare Email Sending.
+- Send replies and outbound messages through Cloudflare Email Sending or configured external SMTP accounts.
 - Sync Cloudflare zones, Email Sending status, Email Routing status, catch-all state, mailbox routing rules, and external IMAP inboxes from one button.
+- Continue long external inbox pulls in D1-backed jobs so page refresh does not cancel the sync.
 - Manage multiple domains and mailbox addresses from one dashboard.
 - Route one mailbox address or all unmatched domain mail with catch-all.
 - Search inbox, sent, and archive across subject, body, sender, and recipient.
+- Search R2 object paths, supported text files, searchable PDFs, and saved text indexes.
 - Archive, unarchive, and delete threads.
-- Compose rich email with bold, italic, underline, text color, background color, links, and attachments.
+- Compose rich email with bold, italic, underline, text color, background color, links, signatures, and attachments.
 - Preview PDF, image, text, and supported attachment files before download.
 - Import contacts manually or from CSV, TXT, and VCF files; edit contacts one by one; store phone, company, tags, and notes.
 - Manage mailbox-specific rich signatures with text style and links.
 - Add external account profiles for Gmail, Outlook, Yahoo, iCloud, or custom IMAP/SMTP settings. OmniDock stores the Worker secret name, not the credential value.
 - Browse one or more configured R2 buckets from the sidebar, open folders, preview objects, upload files, download files, delete files, and save searchable text indexes for scanned documents without automatic AI spend.
+- Review app activity in Logs, export logs, and delete logs from D1.
 - Choose between five UI palettes: Linux, Ubuntu, Fedora, Plasma, and Graphite.
 - Set a default mailbox and customize automatic refresh timing.
-
-OmniDock is not an IMAP/POP3 server and does not replace a full hosted mailbox provider. It is best for private support inboxes, project inboxes, catch-all workflows, domain operations, and lightweight email management that already lives on Cloudflare.
 
 ## Screenshots
 
@@ -37,6 +96,21 @@ The default Linux palette is compact and terminal-like, with mailbox selection, 
 Domain routing, catch-all, mailbox rules, contacts, external accounts, signatures, and refresh settings live under Settings so the inbox stays focused.
 
 ![OmniDock rules and domain settings](docs/screenshots/omnidock-rules-linux.png)
+
+## Quick Start
+
+Short version for a clean Cloudflare Git deployment:
+
+1. Fork this repository.
+2. Create one Cloudflare D1 database and one Cloudflare R2 bucket.
+3. Create a Worker from Git and select your fork.
+4. Set the build command to `npm run build`.
+5. Set the deploy command to `node tools/deploy-preserving-bindings.mjs`.
+6. Add build variables for `OMNIDOCK_D1_DATABASE_ID` and `OMNIDOCK_R2_BUCKET_NAME`.
+7. Add runtime values for `ADMIN_PASSWORD`, `PRIMARY_DOMAIN`, and `CLOUDFLARE_API_TOKEN`.
+8. Open the Worker URL, finish setup, run Sync, and create mailbox rules.
+
+The fork-first flow is intentional. It keeps your install private, keeps your Cloudflare resource ids out of upstream source control, and prevents Git updates from breaking D1/R2 bindings.
 
 ## Why Fork First
 
@@ -460,16 +534,62 @@ Before making your repository public:
 - Run `npm audit --audit-level=moderate`.
 - Run `npm run build`.
 
+## GitHub Repository SEO
+
+GitHub does not read a special SEO file for repository topics. Set these fields manually in the GitHub repository sidebar after publishing.
+
+Recommended repository description:
+
+```text
+Open-source Cloudflare email dashboard for Workers, Email Routing, Email Sending, D1, R2, support inboxes, contacts, signatures, Gmail sync, and R2 file management.
+```
+
+Recommended topics:
+
+```text
+cloudflare cloudflare-workers cloudflare-email-routing cloudflare-email-sending cloudflare-d1 cloudflare-r2 email-dashboard support-inbox self-hosted-email email-routing email-sending r2-storage d1-database gmail-sync imap smtp react typescript serverless open-source
+```
+
+Recommended website URL:
+
+```text
+https://omnidock.org
+```
+
+Recommended social preview:
+
+```text
+Use docs/brand/omnidock-social-preview.svg as the source artwork. Export it to PNG before uploading it to GitHub Settings > Social preview.
+```
+
+See [docs/GITHUB_SEO.md](docs/GITHUB_SEO.md) for a complete GitHub launch checklist, About text, pinned issue ideas, release title examples, and search-friendly copy.
+
 ## License
 
 OmniDock is released under the MIT License. See [LICENSE](LICENSE).
 
-## SEO Description
+## Product SEO Copy
 
-Meta title: OmniDock - open-source Cloudflare Workers email dashboard
+Meta title:
 
-Meta description: OmniDock is an open-source Cloudflare Workers email dashboard for multi-domain inboxes, Email Routing, Email Sending, D1, R2, contacts, signatures, attachments, and support workflows.
+```text
+OmniDock - Open-source Cloudflare email dashboard
+```
 
-SEO copy: OmniDock is a self-hosted Cloudflare email management dashboard built for teams that want a private support inbox, multi-domain email routing, Cloudflare Email Sending, Cloudflare Email Routing, D1 metadata storage, R2 attachment storage, contact management, rich signatures, external account profiles, and an R2 file manager in one open-source Workers app.
+Meta description:
 
-Keywords: Cloudflare email dashboard, Cloudflare Workers email app, Cloudflare Email Routing UI, Cloudflare Email Sending dashboard, open-source support inbox, D1 email database, R2 file manager, self-hosted email management, multi-domain email inbox, Cloudflare support inbox.
+```text
+OmniDock is a self-hosted Cloudflare Workers email dashboard for Email Routing, Email Sending, D1, R2, support inboxes, contacts, signatures, Gmail sync, and R2 file management.
+```
+
+Short product pitch:
+
+```text
+OmniDock turns Cloudflare Workers, Email Routing, Email Sending, D1, and R2 into a private email operations dashboard for support inboxes, multi-domain routing, external account sync, contacts, signatures, attachments, logs, and R2 file workflows.
+```
+
+Search phrases this README intentionally covers:
+
+```text
+Cloudflare email dashboard, Cloudflare Workers email app, Cloudflare Email Routing UI, Cloudflare Email Sending dashboard, open-source support inbox, self-hosted email management, D1 email database, R2 attachment storage, R2 file manager, Gmail IMAP sync, serverless email dashboard, multi-domain email inbox.
+```

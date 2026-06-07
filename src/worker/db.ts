@@ -1191,12 +1191,39 @@ export async function listAuditLogs(
   return result.results ?? [];
 }
 
+export async function deleteAuditLog(env: RuntimeEnv, id: string): Promise<number> {
+  const result = await env.DB.prepare("DELETE FROM audit_log WHERE id = ?").bind(id).run();
+  return result.meta.changes ?? 0;
+}
+
+export async function deleteAuditLogs(env: RuntimeEnv, options: { ids?: string[]; all?: boolean }): Promise<number> {
+  if (options.all) {
+    const result = await env.DB.prepare("DELETE FROM audit_log").run();
+    return result.meta.changes ?? 0;
+  }
+
+  const ids = uniqueStrings((options.ids ?? []).map((id) => id.trim()).filter(Boolean)).slice(0, 500);
+  if (ids.length === 0) {
+    return 0;
+  }
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const result = await env.DB.prepare(`DELETE FROM audit_log WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .run();
+  return result.meta.changes ?? 0;
+}
+
 function isValidDomain(domain: string): boolean {
   return /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain);
 }
 
 function parseMessageIds(value: string): string[] {
   return [...value.matchAll(/<[^>]+>/g)].map((match) => match[0]).slice(0, 20);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function normalizeSubject(subject: string): string {
