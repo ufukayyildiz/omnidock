@@ -848,7 +848,9 @@ function AppContent() {
         }
       }
 
-      await loadBootstrap();
+      const refreshed = await api.bootstrap();
+      setBootstrap(refreshed);
+      setFolderStats(refreshed.stats);
       await loadThreads({ preserveSelection: true });
 
       if (errors.length > 0) {
@@ -858,6 +860,10 @@ function AppContent() {
         setNotice(`Sync complete: ${imported} imported, ${skipped} skipped`);
         setSyncLog(`Sync complete: ${imported} imported, ${skipped} skipped`);
       }
+    } catch (error) {
+      const message = readError(error);
+      setNotice(`Sync failed: ${message}`);
+      setSyncLog(`Sync failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -2238,7 +2244,7 @@ function RulesView({
             </div>
             <Server size={18} />
           </header>
-          <div className="empty-state">Run Sync Cloudflare to load domains from your Cloudflare account.</div>
+          <div className="empty-state">Run Sync to load domains from your Cloudflare account.</div>
         </section>
         )}
 
@@ -4721,7 +4727,7 @@ function describeSending(domain: DomainRow): { title: string; text: string; tone
 
   return {
     title: "Cannot send yet",
-    text: "Enable Cloudflare Email Sending for this domain, then run Sync Cloudflare.",
+    text: "Enable Cloudflare Email Sending for this domain, then run Sync.",
     tone: "warn"
   };
 }
@@ -4753,7 +4759,7 @@ function describeReceiving(
   if (domain.routing_enabled !== 1) {
     return {
       title: "Cannot receive yet",
-      text: "Email Routing is not active for this domain. Enable routing in Cloudflare, then run Sync Cloudflare.",
+      text: "Email Routing is not active for this domain. Enable routing in Cloudflare, then run Sync.",
       tone: "warn"
     };
   }

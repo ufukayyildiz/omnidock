@@ -2991,6 +2991,22 @@ button:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+.statusbar span:not(.statusbar-log) {
+  flex: 0 0 auto;
+}
+
+.statusbar-log {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  overflow: hidden;
+  color: var(--accent-strong);
+  text-overflow: ellipsis;
+}
+
+.statusbar-log svg {
+  flex: 0 0 auto;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

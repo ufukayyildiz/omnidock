@@ -12,7 +12,7 @@ Website: [omnidock.org](https://omnidock.org)
 - Store message and thread metadata in Cloudflare D1.
 - Store raw MIME messages, attachments, and manual files in Cloudflare R2.
 - Send replies and outbound messages through Cloudflare Email Sending.
-- Sync Cloudflare zones, Email Sending status, Email Routing status, catch-all state, and mailbox routing rules.
+- Sync Cloudflare zones, Email Sending status, Email Routing status, catch-all state, mailbox routing rules, and external IMAP inboxes from one button.
 - Manage multiple domains and mailbox addresses from one dashboard.
 - Route one mailbox address or all unmatched domain mail with catch-all.
 - Search inbox, sent, and archive across subject, body, sender, and recipient.
@@ -247,7 +247,7 @@ After deploy:
 5. OmniDock stores the password as a salted PBKDF2 hash in D1.
 6. Create mailbox addresses such as `support`, `info`, or `billing`.
 7. Use `Settings > Rules` to route addresses or enable catch-all.
-8. Click `Sync Cloudflare` to refresh Cloudflare inventory and routing checks.
+8. Click `Sync` to refresh Cloudflare inventory, routing checks, and external inboxes.
 
 The recovery email must be outside the primary domain. Use Gmail, iCloud, Outlook, a company mailbox, or another address that will still work if the managed domain has a routing issue.
 
