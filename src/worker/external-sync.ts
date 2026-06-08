@@ -23,6 +23,7 @@ type SyncOptions = {
   limit?: number;
   cursor?: ExternalSyncCursor;
   maxDurationMs?: number;
+  onProgress?: (progress: ExternalSyncProgress) => Promise<void>;
 };
 
 export type ExternalSyncResult = {
@@ -72,6 +73,17 @@ type ExternalSyncCursor = {
   nextUidExclusive: number | null;
 };
 
+type ExternalSyncProgress = {
+  imported: number;
+  skipped: number;
+  checked: number;
+  folders: string[];
+  folderIndex: number;
+  nextUidExclusive: number | null;
+  hasMore: boolean;
+  force?: boolean;
+};
+
 type ExternalSyncBatchResult = ExternalSyncResult & {
   cursor: ExternalSyncCursor;
   complete: boolean;
@@ -94,6 +106,8 @@ const SYNC_TIME_BUDGET_MS = 22_000;
 export const EXTERNAL_SYNC_HTTP_BACKGROUND_MS = 25_000;
 export const EXTERNAL_SYNC_MAX_RUN_MS = 15 * 60 * 1000;
 const EXTERNAL_SYNC_SAFETY_MS = 3_000;
+const EXTERNAL_SYNC_HEARTBEAT_MS = 4_000;
+const EXTERNAL_SYNC_STALE_RUNNING_MS = 45_000;
 const IMAP_CONNECT_TIMEOUT_MS = 12_000;
 const IMAP_COMMAND_TIMEOUT_MS = 30_000;
 const IMAP_FETCH_TIMEOUT_MS = 60_000;
@@ -184,16 +198,17 @@ export async function queueExternalSyncJob(env: RuntimeEnv, account: ExternalAcc
 }
 
 async function requeueExpiredExternalSyncJobs(env: RuntimeEnv): Promise<void> {
+  const staleBefore = new Date(Date.now() - EXTERNAL_SYNC_STALE_RUNNING_MS).toISOString();
   await env.DB.prepare(
     `UPDATE external_sync_jobs
      SET status = 'queued',
-         message = 'Previous pull window expired. Run Sync to continue remaining mail.',
+         message = 'Previous pull stopped before completion. Run Sync to continue remaining mail.',
          lease_until = NULL,
          updated_at = CURRENT_TIMESTAMP
      WHERE status = 'running'
-       AND (lease_until IS NULL OR lease_until < ?)`
+       AND (lease_until IS NULL OR lease_until < ? OR datetime(updated_at) < datetime(?))`
   )
-    .bind(nowIso())
+    .bind(nowIso(), staleBefore)
     .run();
 }
 
@@ -211,6 +226,7 @@ export async function runExternalSyncJobs(
   options: { accountId?: string; maxDurationMs?: number } = {}
 ): Promise<ExternalSyncJobRunResult> {
   await ensureDatabaseSchema(env);
+  await requeueExpiredExternalSyncJobs(env);
   const maxDurationMs = Math.min(Math.max(options.maxDurationMs ?? EXTERNAL_SYNC_HTTP_BACKGROUND_MS, 5_000), EXTERNAL_SYNC_MAX_RUN_MS);
   const deadline = Date.now() + maxDurationMs - EXTERNAL_SYNC_SAFETY_MS;
   let started = 0;
@@ -280,6 +296,18 @@ async function syncExternalAccountBatch(
   let checked = 0;
   let hasMore = false;
   let timedOut = false;
+  const reportProgress = async (force = false): Promise<void> => {
+    await options.onProgress?.({
+      imported,
+      skipped,
+      checked,
+      folders,
+      folderIndex,
+      nextUidExclusive,
+      hasMore,
+      force
+    });
+  };
 
   const imap = await ImapClient.open({
     host: account.imap_host,
@@ -292,12 +320,14 @@ async function syncExternalAccountBatch(
     if (!options.cursor?.folders.length) {
       folders = externalSyncFolders(account.provider, await imap.listFolders());
     }
+    await reportProgress(true);
 
     for (; folderIndex < folders.length; folderIndex += 1) {
       const folder = folders[folderIndex];
       const selected = await imap.examine(folder);
       if (!selected) {
         nextUidExclusive = null;
+        await reportProgress();
         continue;
       }
 
@@ -319,6 +349,7 @@ async function syncExternalAccountBatch(
         nextUidExclusive = uid;
         if (!raw) {
           skipped += 1;
+          await reportProgress();
           continue;
         }
 
@@ -328,10 +359,12 @@ async function syncExternalAccountBatch(
         } else {
           skipped += 1;
         }
+        await reportProgress();
       }
 
       if (hasMore) break;
       nextUidExclusive = null;
+      await reportProgress();
     }
   } finally {
     await imap.logout();
@@ -404,10 +437,42 @@ async function runExternalSyncJob(
 
   try {
     const latest = (await getExternalSyncJob(env, job.account_id)) ?? job;
+    let lastHeartbeatAt = 0;
+    const saveProgress = async (progress: ExternalSyncProgress): Promise<void> => {
+      if (!progress.force && Date.now() - lastHeartbeatAt < EXTERNAL_SYNC_HEARTBEAT_MS) return;
+      lastHeartbeatAt = Date.now();
+      await env.DB.prepare(
+        `UPDATE external_sync_jobs
+         SET folders_json = ?,
+             folder_index = ?,
+             next_uid_exclusive = ?,
+             imported = ?,
+             skipped = ?,
+             checked = ?,
+             has_more = ?,
+             message = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE account_id = ? AND status = 'running'`
+      )
+        .bind(
+          JSON.stringify(progress.folders),
+          progress.folderIndex,
+          progress.nextUidExclusive,
+          latest.imported + progress.imported,
+          latest.skipped + progress.skipped,
+          latest.checked + progress.checked,
+          progress.hasMore ? 1 : 0,
+          `Pulling ${account.email}: ${progress.imported} new, ${progress.skipped} already saved, ${progress.checked} checked`,
+          account.id
+        )
+        .run();
+    };
+
     const result = await syncExternalAccountBatch(env, account, {
       limit: MAX_SYNC_LIMIT,
       maxDurationMs,
-      cursor: cursorFromJob(latest)
+      cursor: cursorFromJob(latest),
+      onProgress: saveProgress
     });
     await markExternalAccountChecked(env, account.id, "configured");
 
@@ -426,9 +491,9 @@ async function runExternalSyncJob(
            folders_json = ?,
            folder_index = ?,
            next_uid_exclusive = ?,
-           imported = imported + ?,
-           skipped = skipped + ?,
-           checked = checked + ?,
+           imported = ?,
+           skipped = ?,
+           checked = ?,
            has_more = ?,
            message = ?,
            last_error = NULL,
@@ -442,9 +507,9 @@ async function runExternalSyncJob(
         JSON.stringify(result.cursor.folders),
         result.cursor.folderIndex,
         result.cursor.nextUidExclusive,
-        result.imported,
-        result.skipped,
-        result.checked,
+        nextImported,
+        nextSkipped,
+        latest.checked + result.checked,
         result.hasMore ? 1 : 0,
         message,
         nextStatus,

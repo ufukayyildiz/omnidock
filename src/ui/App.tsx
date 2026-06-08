@@ -88,6 +88,7 @@ const EXTERNAL_MAILBOX_SCOPE_PREFIX = "external:";
 const THREAD_PAGE_SIZE = 80;
 const EXTERNAL_SYNC_POLL_INTERVAL_MS = 2500;
 const EXTERNAL_SYNC_UI_MAX_WAIT_MS = 15 * 60 * 1000;
+const EXTERNAL_SYNC_UI_STALE_MS = 70_000;
 
 const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
   { key: "inbox", label: "Inbox", icon: Inbox },
@@ -3313,16 +3314,30 @@ async function pollExternalSyncJobs(
   const accountIds = new Set(accounts.map((account) => account.id));
   const accountNames = new Map(accounts.map((account) => [account.id, account.email]));
   let latestJobs: ExternalSyncJobRow[] = [];
+  let lastProgressSignature = "";
+  let lastProgressAt = startedAt;
 
   for (;;) {
     const payload = await api.externalSyncJobs();
     latestJobs = payload.jobs.filter((job) => accountIds.has(job.account_id));
     const summary = summarizeExternalSyncJobs(latestJobs);
     onProgress?.(formatExternalSyncProgress(latestJobs, accountNames, summary));
+    const progressSignature = latestJobs
+      .map((job) => [job.account_id, job.status, job.updated_at, job.imported, job.skipped, job.checked, job.message ?? ""].join(":"))
+      .join("|");
+    if (progressSignature !== lastProgressSignature) {
+      lastProgressSignature = progressSignature;
+      lastProgressAt = Date.now();
+    }
 
     const active = latestJobs.filter(isActiveExternalSyncJob);
     if (active.length === 0) {
       return { ...summary, timedOut: false };
+    }
+
+    if (Date.now() - lastProgressAt >= EXTERNAL_SYNC_UI_STALE_MS) {
+      await api.resumeExternalSync().catch(() => undefined);
+      return { ...summary, timedOut: true };
     }
 
     if (Date.now() - lastKickAt > 20_000) {
