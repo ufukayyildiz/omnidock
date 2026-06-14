@@ -74,7 +74,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "typescript": "6.0.3",
-    "wrangler": "4.98.0"
+    "wrangler": "4.100.0"
   },
   "overrides": {
     "esbuild": "0.28.1"
