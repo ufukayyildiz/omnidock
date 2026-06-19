@@ -22,6 +22,12 @@ import {
 import { ApiError, RuntimeEnv, isRecord } from "./http";
 import { htmlToPlainText as htmlToText } from "./html";
 import { ensureDatabaseSchema } from "./schema";
+import {
+  limitInboundAttachments,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_COUNT,
+  MAX_TOTAL_ATTACHMENT_BYTES
+} from "./attachment-limits";
 
 type SendInput = {
   from: string;
@@ -58,9 +64,6 @@ type PreparedAttachment = {
 
 type SmtpSecurity = "ssl" | "starttls" | "none";
 
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
-const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-const MAX_ATTACHMENT_COUNT = 10;
 const SMTP_CONNECT_TIMEOUT_MS = 12_000;
 const SMTP_COMMAND_TIMEOUT_MS = 15_000;
 const SMTP_DATA_TIMEOUT_MS = 45_000;
@@ -130,12 +133,10 @@ export async function receiveEmail(
     receivedAt: nowIso()
   });
 
-  for (const attachment of parsed.attachments ?? []) {
-    const filename = attachment.filename || "attachment";
-    const contentType = attachment.mimeType || "application/octet-stream";
+  const inboundAttachments = limitInboundAttachments(parsed.attachments ?? []);
+  for (const attachment of inboundAttachments.accepted) {
+    const { filename, contentType, content, size } = attachment;
     const r2Key = buildObjectKey("attachments", mailbox, filename);
-    const content = attachment.content;
-    const size = typeof content === "string" ? new TextEncoder().encode(content).byteLength : content.byteLength;
 
     await env.MAIL_BUCKET.put(r2Key, content, {
       httpMetadata: {
@@ -153,12 +154,19 @@ export async function receiveEmail(
       contentType,
       size,
       r2Key,
-      disposition: attachment.disposition ?? null,
-      contentId: attachment.contentId ?? null
+      disposition: attachment.disposition,
+      contentId: attachment.contentId
     });
   }
 
-  await recordAudit(env, "email.received", stored.id, { mailbox, from });
+  await recordAudit(env, "email.received", stored.id, {
+    mailbox,
+    from,
+    attachments: inboundAttachments.accepted.length,
+    skippedAttachments: inboundAttachments.skipped,
+    skippedAttachmentBytes: inboundAttachments.skippedBytes,
+    skippedAttachmentReasons: inboundAttachments.skippedReasons
+  });
   return stored;
 }
 
