@@ -51,9 +51,9 @@ OmniDock stores external email credentials as Cloudflare Worker secrets. D1 stor
 - Cloudflare automation uses a Worker secret named `CLOUDFLARE_API_TOKEN`.
 - Email sending is limited to enabled OmniDock mailbox addresses on verified sending domains or explicitly configured external SMTP accounts.
 - R2 objects are served only through authenticated API routes.
-- The browser stores the admin password in `sessionStorage` for the current session.
+- The browser does not store the admin password in web storage. Login creates a D1-backed admin session and returns an HttpOnly, SameSite cookie; only a hash of the session token is stored server-side.
 
-For a multi-user SaaS deployment, replace the single-password model with user accounts, HttpOnly session cookies, CSRF protection, per-user authorization, and rate limiting.
+For a multi-user SaaS deployment, replace the single-password model with user accounts, per-user authorization, tenant isolation, dedicated CSRF controls, and stronger distributed rate limiting.
 
 ## Deployment Safety
 
@@ -67,3 +67,5 @@ npm run build
 ```
 
 Review the output manually before publishing.
+
+Also keep local-only files out of Git. The repository `.gitignore` blocks common secret and credential file names such as `.env*`, `.dev.vars*`, private keys, certificates, and credential dumps, but manual review is still required before every public push.

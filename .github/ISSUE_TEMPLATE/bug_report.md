@@ -24,7 +24,7 @@ Choose the closest area:
 - [ ] Signatures
 - [ ] R2 buckets / files / search
 - [ ] Logs
-- [ ] UI / palette / layout
+- [ ] UI / layout
 - [ ] Deployment / bindings / migrations
 
 ## Steps To Reproduce
@@ -53,4 +53,3 @@ What happened instead?
 Paste non-sensitive OmniDock Logs rows, browser console errors, or screenshots.
 
 Do not paste Cloudflare API tokens, admin passwords, Gmail app passwords, OAuth secrets, full email bodies, private account ids, D1 ids, or private R2 object URLs.
-

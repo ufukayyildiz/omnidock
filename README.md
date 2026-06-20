@@ -377,7 +377,7 @@ Preview support is built for common operator workflows:
 
 The public template intentionally does not include a personal custom domain in `wrangler.jsonc`.
 
-To use your own management host, add a custom domain in Cloudflare Workers, then set `MANAGEMENT_HOST` as a plaintext variable.
+To use your own management host, add a custom domain in Cloudflare Workers, then set `MANAGEMENT_HOST` as a plaintext variable. When `MANAGEMENT_HOST` is set, OmniDock redirects non-local dashboard requests, including the generated `workers.dev` host, to that canonical hostname.
 
 You can also leave `MANAGEMENT_HOST` blank and use the generated `workers.dev` URL.
 
@@ -458,9 +458,8 @@ touch .dev.vars
 Do not commit `.dev.vars`.
 
 ```dotenv
-# optional local secrets
-# ADMIN_PASSWORD=
-# CLOUDFLARE_API_TOKEN=
+# optional local secrets:
+# add ADMIN_PASSWORD and CLOUDFLARE_API_TOKEN only in your uncommitted .dev.vars
 
 # optional local plaintext variables
 # PRIMARY_DOMAIN=

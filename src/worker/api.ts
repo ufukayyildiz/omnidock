@@ -2544,8 +2544,7 @@ function publicOrigin(request: Request, env: RuntimeEnv): string {
   if (
     managementHost &&
     url.hostname !== "localhost" &&
-    url.hostname !== "127.0.0.1" &&
-    !url.hostname.endsWith(".workers.dev")
+    url.hostname !== "127.0.0.1"
   ) {
     return `https://${managementHost}`;
   }

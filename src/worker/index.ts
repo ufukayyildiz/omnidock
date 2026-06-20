@@ -10,8 +10,7 @@ export default {
     const managementHost = runtimeEnv.MANAGEMENT_HOST?.trim();
     const isLocal =
       url.hostname === "localhost" ||
-      url.hostname === "127.0.0.1" ||
-      url.hostname.endsWith(".workers.dev");
+      url.hostname === "127.0.0.1";
 
     if (managementHost && !isLocal && url.hostname !== managementHost) {
       url.hostname = managementHost;
