@@ -18,7 +18,7 @@ import {
   Loader2,
   Link,
   Mail,
-  Palette,
+  Menu,
   PaintBucket,
   Paperclip,
   PenLine,
@@ -80,7 +80,6 @@ import {
   ThreadRow
 } from "./types";
 
-const PALETTE_KEY = "omnidock.palette";
 const DEFAULT_MAILBOX_KEY = "omnidock.defaultMailbox";
 const REFRESH_INTERVAL_KEY = "omnidock.refreshIntervalSeconds";
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 10;
@@ -97,7 +96,6 @@ const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
 ];
 
 type ViewKey = "mail" | "buckets" | "rules" | "contacts" | "signatures" | "external" | "logs" | "index-engine" | "notes" | "other-settings";
-type PaletteKey = "mint" | "ubuntu" | "fedora" | "plasma" | "graphite";
 type SettingsViewKey = Exclude<ViewKey, "mail" | "buckets">;
 type AuthViewKey = "checking" | "configuration" | "login" | "setup" | "reset-request" | "reset-confirm";
 type RichEditorValue = { html: string; text: string };
@@ -151,18 +149,6 @@ type BucketSearchScope = "current" | "all";
 type BucketDisplayObjectRow = BucketObjectRow & Partial<Pick<BucketSearchResultRow, "bucketId" | "bucketName" | "bucketBinding" | "match" | "snippet">>;
 
 const AppDialogContext = createContext<AppDialogApi | null>(null);
-
-const palettes: {
-  key: PaletteKey;
-  label: string;
-  swatches: [string, string, string];
-}[] = [
-  { key: "mint", label: "Linux", swatches: ["#0b0f0c", "#22c55e", "#d7ffe2"] },
-  { key: "ubuntu", label: "Ubuntu", swatches: ["#e95420", "#77216f", "#f6e9df"] },
-  { key: "fedora", label: "Fedora", swatches: ["#3c6eb4", "#294172", "#e7eef9"] },
-  { key: "plasma", label: "Plasma", swatches: ["#3daee9", "#1d5b86", "#edf7fc"] },
-  { key: "graphite", label: "Graphite", swatches: ["#8b949e", "#30363d", "#f0f3f6"] }
-];
 
 const MAX_CLIENT_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_CLIENT_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -232,11 +218,6 @@ const securityOptions: SelectOption[] = [
   { value: "starttls", label: "STARTTLS" },
   { value: "none", label: "None" }
 ];
-
-function initialPalette(): PaletteKey {
-  const stored = localStorage.getItem(PALETTE_KEY);
-  return palettes.some((palette) => palette.key === stored) ? (stored as PaletteKey) : "mint";
-}
 
 function initialRefreshIntervalSeconds(): number {
   const stored = Number(localStorage.getItem(REFRESH_INTERVAL_KEY));
@@ -360,7 +341,6 @@ function useAppDialog(): AppDialogApi {
 
 function AppContent() {
   const initialResetToken = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
-  const [palette, setPalette] = useState<PaletteKey>(initialPalette);
   const [authenticated, setAuthenticated] = useState(false);
   const [draftPassword, setDraftPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -388,21 +368,16 @@ function AppContent() {
   const [syncLog, setSyncLog] = useState("Ready");
   const [busy, setBusy] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const externalSyncingIds = useRef<Set<string>>(new Set());
   const externalSyncMonitorRef = useRef(false);
   const sessionCheckRef = useRef(false);
 
   const api = useMemo(() => (authenticated ? new ApiClient() : null), [authenticated]);
-  const activePalette = palettes.find((item) => item.key === palette) ?? palettes[0];
   const selectedExternalAccount = useMemo(
     () => (bootstrap && selectedMailboxId ? externalAccountFromScope(selectedMailboxId, bootstrap.externalAccounts ?? []) : null),
     [bootstrap, selectedMailboxId]
   );
-
-  useEffect(() => {
-    document.documentElement.dataset.palette = palette;
-    localStorage.setItem(PALETTE_KEY, palette);
-  }, [palette]);
 
   useEffect(() => {
     if (!initialResetToken) return;
@@ -789,15 +764,7 @@ function AppContent() {
 
   if (!authenticated) {
     if (authView === "checking") {
-      return (
-        <AuthStatusScreen
-          busy={busy}
-          error={loginError}
-          onRetry={retrySetupStatus}
-          palette={palette}
-          onPaletteChange={setPalette}
-        />
-      );
+      return <AuthStatusScreen busy={busy} error={loginError} onRetry={retrySetupStatus} />;
     }
 
     if (authView === "setup") {
@@ -808,8 +775,6 @@ function AppContent() {
           defaultDomain={setup?.primaryDomain ?? ""}
           passwordFromSecret={Boolean(setup?.passwordFromSecret)}
           onSubmit={submitSetup}
-          palette={palette}
-          onPaletteChange={setPalette}
         />
       );
     }
@@ -821,8 +786,6 @@ function AppContent() {
           error={loginError}
           requirements={setup?.requirements ?? []}
           onRetry={retrySetupStatus}
-          palette={palette}
-          onPaletteChange={setPalette}
         />
       );
     }
@@ -837,8 +800,6 @@ function AppContent() {
             setAuthView("login");
           }}
           onSubmit={submitResetRequest}
-          palette={palette}
-          onPaletteChange={setPalette}
         />
       );
     }
@@ -849,8 +810,6 @@ function AppContent() {
           busy={busy}
           error={loginError}
           onSubmit={submitResetConfirm}
-          palette={palette}
-          onPaletteChange={setPalette}
         />
       );
     }
@@ -868,14 +827,12 @@ function AppContent() {
           setAuthNotice(null);
           setAuthView("reset-request");
         }}
-        palette={palette}
-        onPaletteChange={setPalette}
       />
     );
   }
 
   if (!bootstrap) {
-    return <AuthGate error={notice} onLock={lock} palette={palette} onPaletteChange={setPalette} />;
+    return <AuthGate error={notice} onLock={lock} />;
   }
 
   const domains = bootstrap.domains;
@@ -1004,10 +961,12 @@ function AppContent() {
         selectedMailboxId={selectedMailboxId}
         selectedBucketId={selectedBucketId}
         refreshIntervalSeconds={refreshIntervalSeconds}
+        mobileOpen={mobileNavOpen}
         onMailboxChange={changeMailboxScope}
         onBucketOpen={(bucketId) => {
           setSelectedBucketId(bucketId);
           setView("buckets");
+          setMobileNavOpen(false);
         }}
         onFolderChange={(nextFolder) => {
           setFolder(nextFolder);
@@ -1017,13 +976,31 @@ function AppContent() {
           setThreadHasMore(false);
           setActiveThreadId(null);
           setThread(null);
+          setMobileNavOpen(false);
         }}
-        onSettingsOpen={setView}
+        onSettingsOpen={(nextView) => {
+          setView(nextView);
+          setMobileNavOpen(false);
+        }}
         onLock={lock}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
+      {mobileNavOpen ? (
+        <button className="sidebar-backdrop" type="button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />
+      ) : null}
 
       <main className="workspace">
         <header className="topbar">
+          <button className="icon-button mobile-nav-toggle" type="button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
+            <Menu size={18} />
+          </button>
+          <div className="topbar-brand" aria-label="OmniDock control console">
+            <img src="/omnidock-mark.svg" alt="" />
+            <div>
+              <strong>OmniDock</strong>
+              <span>control plane</span>
+            </div>
+          </div>
           {view === "mail" ? (
             <div className="mail-search">
               <div className="search-wrap">
@@ -1072,7 +1049,6 @@ function AppContent() {
             <SettingsTitle view={view} activeDomain={activeDomain} domains={domains} />
           )}
           <div className="topbar-actions">
-            <PaletteChooser value={palette} onChange={setPalette} />
             <button className="button" type="button" onClick={() => void syncEverything()} disabled={busy} title="Sync Cloudflare and pull external mail">
               {busy ? <Loader2 className="spin-icon" size={16} /> : <ShieldCheck size={16} />}
               Sync
@@ -1187,7 +1163,6 @@ function AppContent() {
         <span>{activeDomain?.domain ?? `${domains.length} domains`}</span>
         <span>{view === "buckets" ? activeBucket?.name ?? "Buckets" : activeMailboxLabel ?? "All mailboxes"}</span>
         <span>{mailboxScopeOptions.length} mailboxes</span>
-        <span>{activePalette.label}</span>
       </footer>
 
       {composeOpen ? (
@@ -1215,9 +1190,7 @@ function LoginScreen({
   notice,
   onSubmit,
   resetAvailable,
-  onForgot,
-  palette,
-  onPaletteChange
+  onForgot
 }: {
   draftPassword: string;
   setDraftPassword: (value: string) => void;
@@ -1226,14 +1199,9 @@ function LoginScreen({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   resetAvailable: boolean;
   onForgot: () => void;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <form className="login-box" onSubmit={onSubmit}>
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1283,16 +1251,12 @@ function ConfigurationScreen({
   busy,
   error,
   requirements,
-  onRetry,
-  palette,
-  onPaletteChange
+  onRetry
 }: {
   busy: boolean;
   error: string | null;
   requirements: RuntimeRequirement[];
   onRetry: () => void;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   const [copiedName, setCopiedName] = useState<string | null>(null);
 
@@ -1304,9 +1268,6 @@ function ConfigurationScreen({
 
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <section className="login-box configuration-box">
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1376,9 +1337,7 @@ function SetupScreen({
   defaultDomain,
   error,
   passwordFromSecret,
-  onSubmit,
-  palette,
-  onPaletteChange
+  onSubmit
 }: {
   busy: boolean;
   defaultDomain: string;
@@ -1391,8 +1350,6 @@ function SetupScreen({
     primaryDomain: string;
     password?: string | null;
   }) => Promise<void>;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1436,9 +1393,6 @@ function SetupScreen({
 
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <form className="login-box" onSubmit={submit}>
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1570,16 +1524,12 @@ function ResetRequestScreen({
   busy,
   error,
   onBack,
-  onSubmit,
-  palette,
-  onPaletteChange
+  onSubmit
 }: {
   busy: boolean;
   error: string | null;
   onBack: () => void;
   onSubmit: (email: string) => Promise<void>;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   const [email, setEmail] = useState("");
 
@@ -1590,9 +1540,6 @@ function ResetRequestScreen({
 
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <form className="login-box" onSubmit={submit}>
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1633,15 +1580,11 @@ function ResetRequestScreen({
 function ResetConfirmScreen({
   busy,
   error,
-  onSubmit,
-  palette,
-  onPaletteChange
+  onSubmit
 }: {
   busy: boolean;
   error: string | null;
   onSubmit: (input: { password: string }) => Promise<void>;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -1659,9 +1602,6 @@ function ResetConfirmScreen({
 
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <form className="login-box" onSubmit={submit}>
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1712,21 +1652,14 @@ function ResetConfirmScreen({
 function AuthStatusScreen({
   busy,
   error,
-  onRetry,
-  palette,
-  onPaletteChange
+  onRetry
 }: {
   busy: boolean;
   error: string | null;
   onRetry: () => void;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <section className="login-box">
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1752,20 +1685,13 @@ function AuthStatusScreen({
 
 function AuthGate({
   error,
-  onLock,
-  palette,
-  onPaletteChange
+  onLock
 }: {
   error: string | null;
   onLock: () => void;
-  palette: PaletteKey;
-  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   return (
     <main className="login-shell">
-      <div className="login-tools">
-        <PaletteChooser value={palette} onChange={onPaletteChange} />
-      </div>
       <section className="login-box">
         <div className="brand-block">
           <img src="/omnidock-mark.svg" alt="" />
@@ -1867,56 +1793,6 @@ function CustomSelect({
               <span>{option.label}</span>
               {option.description ? <small>{option.description}</small> : null}
               {option.value === value ? <CheckCircle2 size={14} /> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PaletteChooser({
-  value,
-  onChange
-}: {
-  value: PaletteKey;
-  onChange: (palette: PaletteKey) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = palettes.find((palette) => palette.key === value) ?? palettes[0];
-
-  return (
-    <div className="palette-control">
-      <button
-        className="button palette-trigger"
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        title="Color palette"
-      >
-        <Palette size={16} />
-        <span>{selected.label}</span>
-      </button>
-      {open ? (
-        <div className="palette-popover" role="menu">
-          {palettes.map((palette) => (
-            <button
-              key={palette.key}
-              className={palette.key === value ? "palette-option active" : "palette-option"}
-              type="button"
-              onClick={() => {
-                onChange(palette.key);
-                setOpen(false);
-              }}
-              role="menuitem"
-            >
-              <span className="palette-swatches" aria-hidden="true">
-                {palette.swatches.map((swatch) => (
-                  <i key={swatch} style={{ background: swatch }} />
-                ))}
-              </span>
-              <span>{palette.label}</span>
-              {palette.key === value ? <CheckCircle2 size={14} /> : <Circle size={14} />}
             </button>
           ))}
         </div>
@@ -2049,11 +1925,13 @@ function Sidebar({
   selectedMailboxId,
   selectedBucketId,
   refreshIntervalSeconds,
+  mobileOpen,
   onMailboxChange,
   onBucketOpen,
   onFolderChange,
   onSettingsOpen,
-  onLock
+  onLock,
+  onMobileClose
 }: {
   managementHost: string;
   mailboxes: MailboxRow[];
@@ -2065,11 +1943,13 @@ function Sidebar({
   selectedMailboxId: string | null;
   selectedBucketId: string | null;
   refreshIntervalSeconds: number;
+  mobileOpen: boolean;
   onMailboxChange: (id: string | null) => void;
   onBucketOpen: (id: string) => void;
   onFolderChange: (folder: FolderKey) => void;
   onSettingsOpen: (view: SettingsViewKey) => void;
   onLock: () => void;
+  onMobileClose: () => void;
 }) {
   const bucketOptions = bucketOptionsForSelect(buckets);
   const mailboxOptions = combinedMailboxOptions(mailboxes, externalAccounts);
@@ -2085,20 +1965,26 @@ function Sidebar({
   }, [view]);
 
   return (
-    <aside className="sidebar">
+    <aside className={mobileOpen ? "sidebar mobile-open" : "sidebar"}>
       <div className="brand-row">
         <img src="/omnidock-mark.svg" alt="" />
         <div>
           <strong>OmniDock</strong>
           <span>{managementHost}</span>
         </div>
+        <button className="icon-button mobile-sidebar-close" type="button" onClick={onMobileClose} aria-label="Close navigation">
+          <X size={16} />
+        </button>
       </div>
 
       <label className="mailbox-switcher">
         <span>Mailbox</span>
         <CustomSelect
           value={selectedMailboxId ?? ""}
-          onChange={(value) => onMailboxChange(value || null)}
+          onChange={(value) => {
+            onMailboxChange(value || null);
+            onMobileClose();
+          }}
           disabled={mailboxOptions.length === 0}
           options={mailboxOptions.length === 0 ? [{ value: "", label: "No mailboxes" }] : [{ value: "", label: "All mailboxes" }, ...mailboxOptions]}
         />
