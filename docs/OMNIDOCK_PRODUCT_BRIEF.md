@@ -427,7 +427,7 @@ Other Settings:
 - Manual Sync ile karismayan refresh
 - Default mailbox secimi
 - Default domain secimi
-- UI palette secimi
+- Tek light workstation UI dili
 
 Auto refresh sadece ekran verisini yenilemelidir. Login ekranina dusme, active sync'i iptal etme veya modal state'i beklenmedik sekilde kapatma gibi davranislar olmamalidir.
 
@@ -435,13 +435,11 @@ Auto refresh sadece ekran verisini yenilemelidir. Login ekranina dusme, active s
 
 OmniDock UI Linux/desktop operasyon paneli hissi tasir.
 
-Palette'ler:
+Tek tema:
 
-- Linux
-- Ubuntu
-- Fedora
-- Plasma
-- Graphite
+- Acik renkli Linux/workstation kontrol paneli
+- Keskin border'lar, yuksek kontrast, kompakt tipografi
+- Teal primary aksiyonlar, kontrollu pas turuncusu ve durum renkleri
 
 UI prensipleri:
 

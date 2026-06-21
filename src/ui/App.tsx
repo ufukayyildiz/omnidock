@@ -18,7 +18,6 @@ import {
   Loader2,
   Link,
   Mail,
-  Menu,
   PaintBucket,
   Paperclip,
   PenLine,
@@ -83,6 +82,7 @@ import {
 const DEFAULT_MAILBOX_KEY = "omnidock.defaultMailbox";
 const REFRESH_INTERVAL_KEY = "omnidock.refreshIntervalSeconds";
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 10;
+const NOTICE_AUTO_DISMISS_MS = 3000;
 const EXTERNAL_MAILBOX_SCOPE_PREFIX = "external:";
 const THREAD_PAGE_SIZE = 80;
 const EXTERNAL_SYNC_POLL_INTERVAL_MS = 2500;
@@ -149,6 +149,7 @@ type BucketSearchScope = "current" | "all";
 type BucketDisplayObjectRow = BucketObjectRow & Partial<Pick<BucketSearchResultRow, "bucketId" | "bucketName" | "bucketBinding" | "match" | "snippet">>;
 
 const AppDialogContext = createContext<AppDialogApi | null>(null);
+type NoticeState = { id: number; message: string };
 
 const MAX_CLIENT_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_CLIENT_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -364,16 +365,19 @@ function AppContent() {
   const [threadLoadingMore, setThreadLoadingMore] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadPayload | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNoticeState] = useState<NoticeState | null>(null);
   const [syncLog, setSyncLog] = useState("Ready");
   const [busy, setBusy] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const externalSyncingIds = useRef<Set<string>>(new Set());
   const externalSyncMonitorRef = useRef(false);
   const sessionCheckRef = useRef(false);
+  const noticeSeqRef = useRef(0);
 
   const api = useMemo(() => (authenticated ? new ApiClient() : null), [authenticated]);
+  const setNotice = useCallback((message: string | null) => {
+    setNoticeState(message ? { id: (noticeSeqRef.current += 1), message } : null);
+  }, []);
   const selectedExternalAccount = useMemo(
     () => (bootstrap && selectedMailboxId ? externalAccountFromScope(selectedMailboxId, bootstrap.externalAccounts ?? []) : null),
     [bootstrap, selectedMailboxId]
@@ -660,6 +664,15 @@ function AppContent() {
   }, [busy, syncLog]);
 
   useEffect(() => {
+    if (!notice) return;
+    const noticeId = notice.id;
+    const timer = window.setTimeout(() => {
+      setNoticeState((current) => (current?.id === noticeId ? null : current));
+    }, NOTICE_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
     if (activeThreadId) {
       void loadThread(activeThreadId);
     } else {
@@ -832,7 +845,7 @@ function AppContent() {
   }
 
   if (!bootstrap) {
-    return <AuthGate error={notice} onLock={lock} />;
+    return <AuthGate error={notice?.message ?? null} onLock={lock} />;
   }
 
   const domains = bootstrap.domains;
@@ -961,12 +974,10 @@ function AppContent() {
         selectedMailboxId={selectedMailboxId}
         selectedBucketId={selectedBucketId}
         refreshIntervalSeconds={refreshIntervalSeconds}
-        mobileOpen={mobileNavOpen}
         onMailboxChange={changeMailboxScope}
         onBucketOpen={(bucketId) => {
           setSelectedBucketId(bucketId);
           setView("buckets");
-          setMobileNavOpen(false);
         }}
         onFolderChange={(nextFolder) => {
           setFolder(nextFolder);
@@ -976,24 +987,13 @@ function AppContent() {
           setThreadHasMore(false);
           setActiveThreadId(null);
           setThread(null);
-          setMobileNavOpen(false);
         }}
-        onSettingsOpen={(nextView) => {
-          setView(nextView);
-          setMobileNavOpen(false);
-        }}
+        onSettingsOpen={setView}
         onLock={lock}
-        onMobileClose={() => setMobileNavOpen(false)}
       />
-      {mobileNavOpen ? (
-        <button className="sidebar-backdrop" type="button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />
-      ) : null}
 
       <main className="workspace">
         <header className="topbar">
-          <button className="icon-button mobile-nav-toggle" type="button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
-            <Menu size={18} />
-          </button>
           <div className="topbar-brand" aria-label="OmniDock control console">
             <img src="/omnidock-mark.svg" alt="" />
             <div>
@@ -1063,7 +1063,7 @@ function AppContent() {
         {notice ? (
           <div className="notice">
             <AlertTriangle size={16} />
-            <span>{notice}</span>
+            <span>{notice.message}</span>
             <button className="icon-button" type="button" onClick={() => setNotice(null)} title="Dismiss">
               <X size={14} />
             </button>
@@ -1925,13 +1925,11 @@ function Sidebar({
   selectedMailboxId,
   selectedBucketId,
   refreshIntervalSeconds,
-  mobileOpen,
   onMailboxChange,
   onBucketOpen,
   onFolderChange,
   onSettingsOpen,
-  onLock,
-  onMobileClose
+  onLock
 }: {
   managementHost: string;
   mailboxes: MailboxRow[];
@@ -1943,13 +1941,11 @@ function Sidebar({
   selectedMailboxId: string | null;
   selectedBucketId: string | null;
   refreshIntervalSeconds: number;
-  mobileOpen: boolean;
   onMailboxChange: (id: string | null) => void;
   onBucketOpen: (id: string) => void;
   onFolderChange: (folder: FolderKey) => void;
   onSettingsOpen: (view: SettingsViewKey) => void;
   onLock: () => void;
-  onMobileClose: () => void;
 }) {
   const bucketOptions = bucketOptionsForSelect(buckets);
   const mailboxOptions = combinedMailboxOptions(mailboxes, externalAccounts);
@@ -1965,26 +1961,20 @@ function Sidebar({
   }, [view]);
 
   return (
-    <aside className={mobileOpen ? "sidebar mobile-open" : "sidebar"}>
+    <aside className="sidebar">
       <div className="brand-row">
         <img src="/omnidock-mark.svg" alt="" />
         <div>
           <strong>OmniDock</strong>
           <span>{managementHost}</span>
         </div>
-        <button className="icon-button mobile-sidebar-close" type="button" onClick={onMobileClose} aria-label="Close navigation">
-          <X size={16} />
-        </button>
       </div>
 
       <label className="mailbox-switcher">
         <span>Mailbox</span>
         <CustomSelect
           value={selectedMailboxId ?? ""}
-          onChange={(value) => {
-            onMailboxChange(value || null);
-            onMobileClose();
-          }}
+          onChange={(value) => onMailboxChange(value || null)}
           disabled={mailboxOptions.length === 0}
           options={mailboxOptions.length === 0 ? [{ value: "", label: "No mailboxes" }] : [{ value: "", label: "All mailboxes" }, ...mailboxOptions]}
         />
@@ -4678,7 +4668,7 @@ function BucketObjectPreview({
         ) : state.kind === "image" && state.url ? (
           <img className="image-preview" src={state.url} alt={object.name} />
         ) : state.kind === "pdf" && state.url ? (
-          <iframe className="pdf-preview" src={state.url} title={object.name} />
+          <iframe className="pdf-preview" src={pdfPreviewUrl(state.url)} title={object.name} />
         ) : officePreview ? (
           textIndex ? (
             <pre className="text-preview office-preview">{textIndex.text}</pre>
@@ -5976,6 +5966,11 @@ function detectObjectPreviewKind(filenameInput: string, contentTypeInput: string
   }
 
   return "download";
+}
+
+function pdfPreviewUrl(url: string): string {
+  const separator = url.includes("#") ? "&" : "#";
+  return `${url}${separator}navpanes=0&view=FitH`;
 }
 
 function isOfficePreviewCandidate(filenameInput: string, contentTypeInput: string): boolean {

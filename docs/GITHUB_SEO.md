@@ -95,11 +95,11 @@ Suggested labels:
 Suggested starter issues:
 
 - Improve docs for a new Cloudflare Worker Git deployment.
-- Add screenshots for Ubuntu, Fedora, Plasma, and Graphite palettes.
+- Keep real app screenshots updated for every primary module area.
 - Add export/import tooling for OmniDock settings.
 - Add optional OCR integration guide for searchable scanned PDFs.
 - Add more IMAP provider presets.
-- Add demo screenshots for R2 upload progress and PDF preview.
+- Keep demo screenshots for R2 upload progress, PDF preview, and Index Engine workflows.
 - Add documentation for Gmail app password Worker secrets.
 
 ## Release Titles

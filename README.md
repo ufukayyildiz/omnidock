@@ -62,7 +62,7 @@ OmniDock is not an IMAP/POP3 server and does not replace a full hosted mailbox p
 | External accounts | Gmail and custom IMAP/SMTP profiles with Worker-secret credential references |
 | Buckets | Browse R2 folders, preview PDF/image/text files, upload, download, delete, search paths, searchable PDFs, and saved OCR/text indexes |
 | Logs | Audit log table for sync, sending, errors, warnings, exports, and cleanup |
-| UI | Linux, Ubuntu, Fedora, Plasma, and Graphite palettes with compact desktop layout |
+| UI | Light Linux/workstation control-plane design with compact desktop layout |
 
 ## What It Does
 
@@ -84,18 +84,32 @@ OmniDock is not an IMAP/POP3 server and does not replace a full hosted mailbox p
 - Add external account profiles for Gmail, Outlook, Yahoo, iCloud, or custom IMAP/SMTP settings. OmniDock stores the Worker secret name, not the credential value.
 - Browse one or more configured R2 buckets from the sidebar, create folders, preview PDF/image/text objects, upload files with progress, download files, delete files, and run a D1-backed Index Engine for searchable text and OCR-style document extraction.
 - Review app activity in Logs, export logs, and delete logs from D1.
-- Choose between five UI palettes: Linux, Ubuntu, Fedora, Plasma, and Graphite.
+- Use a single light Linux/workstation management interface with sharp borders, compact typography, and high-contrast controls.
 - Set a default mailbox and customize automatic refresh timing.
 
 ## Screenshots
 
-The default Linux palette is compact and terminal-like, with mailbox selection, inbox/sent/archive folders, Cloudflare sync, buckets, and compose controls on one screen.
+These screenshots are captured from a real local OmniDock Worker with public-safe demo data. They cover every primary module area in the app.
 
-![OmniDock Linux inbox](docs/screenshots/omnidock-inbox-linux.png)
+| Mail | R2 buckets |
+| --- | --- |
+| ![OmniDock mail workspace](docs/screenshots/omnidock-mail.png) | ![OmniDock R2 bucket manager](docs/screenshots/omnidock-buckets.png) |
 
-Domain routing, catch-all, mailbox rules, contacts, external accounts, signatures, and refresh settings live under Settings so the inbox stays focused.
+| Rules | Contacts |
+| --- | --- |
+| ![OmniDock domain rules](docs/screenshots/omnidock-rules.png) | ![OmniDock contacts manager](docs/screenshots/omnidock-contacts.png) |
 
-![OmniDock rules and domain settings](docs/screenshots/omnidock-rules-linux.png)
+| Signatures | External accounts |
+| --- | --- |
+| ![OmniDock mailbox signatures](docs/screenshots/omnidock-signatures.png) | ![OmniDock external accounts](docs/screenshots/omnidock-external.png) |
+
+| Logs | Index Engine |
+| --- | --- |
+| ![OmniDock activity logs](docs/screenshots/omnidock-logs.png) | ![OmniDock Index Engine](docs/screenshots/omnidock-index-engine.png) |
+
+| Notes | Other settings |
+| --- | --- |
+| ![OmniDock notes tool](docs/screenshots/omnidock-notes.png) | ![OmniDock other settings](docs/screenshots/omnidock-other-settings.png) |
 
 ## Quick Start
 
