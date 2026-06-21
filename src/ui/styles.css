@@ -25,8 +25,8 @@
   --accent: #0f766e;
   --accent-strong: #115e59;
   --accent-contrast: #ffffff;
-  --accent-soft: #e4f3ef;
-  --selected: #e4f3ef;
+  --accent-soft: #edf7f4;
+  --selected: #e8ede3;
   --selected-line: #0f766e;
   --hover-bg: #eef1ea;
   --hover-line: #b7c3bd;
@@ -484,7 +484,7 @@ button:hover:not(:disabled) {
 .search-scope .icon-button.default-active {
   border-color: var(--accent);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
 }
 
 .topbar-title {
@@ -598,13 +598,47 @@ button:hover:not(:disabled) {
 .custom-select-option.active {
   border-color: var(--selected-line);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
+}
+
+.custom-select-option.active span {
+  color: var(--text);
+}
+
+.custom-select-option.active small {
+  color: var(--muted);
+}
+
+.custom-select-option.active svg {
+  color: var(--accent);
 }
 
 .custom-select-option:hover {
   border-color: var(--hover-line);
   background: var(--hover-bg);
   color: var(--hover-text);
+}
+
+.custom-select-option:hover span {
+  color: var(--hover-text);
+}
+
+.custom-select-option:hover small {
+  color: var(--muted);
+}
+
+.custom-select-option.active:hover {
+  border-color: var(--selected-line);
+  background: var(--selected);
+  color: var(--text);
+}
+
+.custom-select-option.active:hover span {
+  color: var(--text);
+}
+
+.custom-select-option.active:hover small {
+  color: var(--muted);
 }
 
 .custom-select-option.disabled,
@@ -693,7 +727,7 @@ button:hover:not(:disabled) {
 .button.mini.active {
   border-color: var(--accent);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
 }
 
 .button.wide {
@@ -1346,7 +1380,12 @@ button:hover:not(:disabled) {
 .bucket-row.active {
   border-color: var(--selected-line);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
+}
+
+.bucket-row.active b,
+.bucket-row.active small {
+  color: var(--muted);
 }
 
 .bucket-row:hover {
@@ -1391,7 +1430,12 @@ button:hover:not(:disabled) {
 .bucket-row.object.active:hover {
   border-color: var(--selected-line);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
+}
+
+.bucket-row.object.active:hover b,
+.bucket-row.object.active:hover small {
+  color: var(--muted);
 }
 
 .bucket-upload-log {
@@ -1689,7 +1733,7 @@ button:hover:not(:disabled) {
 .domain-chip.active {
   border-color: var(--selected-line);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
 }
 
 .rules-grid {
@@ -2081,7 +2125,7 @@ button:hover:not(:disabled) {
 .contact-row.active {
   border-left: 3px solid var(--accent);
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
 }
 
 .contact-row small {
@@ -2127,7 +2171,13 @@ button:hover:not(:disabled) {
 .signature-mailbox.active,
 .external-account-row.active {
   background: var(--selected);
-  color: var(--accent-strong);
+  color: var(--text);
+}
+
+.signature-mailbox.active span:not(.status-pill),
+.external-account-row.active strong,
+.external-account-row.active span:not(.status-pill) {
+  color: var(--text);
 }
 
 .contact-row div,
@@ -2393,6 +2443,7 @@ button:hover:not(:disabled) {
 
 .thread-row.active {
   background: var(--selected);
+  color: var(--text);
 }
 
 .unread-dot {

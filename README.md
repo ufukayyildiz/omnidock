@@ -11,6 +11,10 @@
   ·
   <a href="#features">Features</a>
   ·
+  <a href="#r2-file-operations">R2 file operations</a>
+  ·
+  <a href="#external-email-accounts">External email</a>
+  ·
   <a href="#security-notes">Security</a>
   ·
   <a href="docs/GITHUB_SEO.md">GitHub SEO checklist</a>
@@ -25,11 +29,52 @@
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-16a34a">
 </p>
 
+<p align="center">
+  <img alt="R2 bucket manager" src="https://img.shields.io/badge/R2-bucket%20manager-0f766e">
+  <img alt="PDF preview" src="https://img.shields.io/badge/PDF-preview-c76b36">
+  <img alt="Indexed document search" src="https://img.shields.io/badge/Indexed-document%20search-059669">
+  <img alt="External IMAP SMTP" src="https://img.shields.io/badge/External-IMAP%2FSMTP-2563eb">
+  <img alt="Fork first" src="https://img.shields.io/badge/Fork--first-secret%20safe-d97706">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/omnidock-mail.png" alt="OmniDock mail workspace" width="920">
+</p>
+
 OmniDock is an open-source Cloudflare email dashboard for teams that want a private support inbox, multi-domain email routing, Cloudflare Email Sending, Cloudflare Email Routing, R2 file management, contacts, signatures, and external inbox sync in one Workers app.
 
 Think of it as a compact Linux-style command center for domain email: not a hosted mailbox provider, not a SaaS lock-in, and not a black box. You fork it, connect your own Cloudflare account, keep your own D1/R2 data, and run the dashboard on your own Worker.
 
 Website: [omnidock.org](https://omnidock.org)
+
+## At A Glance
+
+| Built for | What it unlocks |
+| --- | --- |
+| Cloudflare email teams | One dashboard for Email Routing, Email Sending, D1 metadata, R2 objects, contacts, signatures, and logs |
+| R2-heavy workflows | Browse buckets, create folders, upload/download/delete objects, preview PDFs/images/text, and search indexed object text |
+| External inbox operations | Connect Gmail, Outlook, Yahoo, iCloud, or custom IMAP/SMTP profiles without storing real credentials in D1 |
+| Public forks | Keep account ids, API tokens, passwords, private bucket names, and personal domains out of source control |
+
+```mermaid
+flowchart LR
+  route["Email Routing"] --> worker["Cloudflare Worker"]
+  sending["Email Sending"] --> worker
+  external["External IMAP/SMTP"] --> worker
+  worker --> d1["D1 metadata"]
+  worker --> r2["R2 mail, attachments, files"]
+  r2 --> index["Index Engine"]
+  index --> d1
+  worker --> ui["OmniDock UI"]
+  ui --> operator["Operator"]
+
+  classDef cloud fill:#fef3c7,stroke:#d97706,color:#111827;
+  classDef data fill:#ecfeff,stroke:#0f766e,color:#111827;
+  classDef app fill:#f8faf7,stroke:#475569,color:#111827;
+  class route,sending,worker cloud;
+  class d1,r2,index data;
+  class external,ui,operator app;
+```
 
 ## Why OmniDock
 
@@ -63,6 +108,41 @@ OmniDock is not an IMAP/POP3 server and does not replace a full hosted mailbox p
 | Buckets | Browse R2 folders, preview PDF/image/text files, upload, download, delete, search paths, searchable PDFs, and saved OCR/text indexes |
 | Logs | Audit log table for sync, sending, errors, warnings, exports, and cleanup |
 | UI | Light Linux/workstation control-plane design with compact desktop layout |
+
+## R2 File Operations
+
+OmniDock treats Cloudflare R2 as more than attachment storage. The Buckets view is a small R2 file manager built into the same email operations workspace.
+
+| R2 capability | Details |
+| --- | --- |
+| Multi-bucket browsing | `MAIL_BUCKET` plus optional buckets from `OMNIDOCK_EXTRA_R2_BUCKETS`, shown with readable bucket names |
+| Folder workflow | Prefix browsing, folder creation, nested folders, parent navigation, and object-level actions |
+| File preview | Inline previews for PDFs, images, text files, and supported attachments before download |
+| Upload and cleanup | Manual uploads, download actions, object delete flow, audit logs, and public-safe confirmation states |
+| Search | Filename/path search, supported text search, extractable PDF search, and saved D1 text indexes |
+| Index Engine | Scans configured buckets, skips unchanged objects by ETag and size, and stores searchable text in D1 |
+| Workers AI ready | Optional `AI` binding enables Markdown Conversion for supported scanned PDFs, images, Office files, and spreadsheets |
+
+<p align="center">
+  <img src="docs/screenshots/omnidock-buckets.png" alt="OmniDock R2 bucket manager" width="920">
+</p>
+
+## External Email Accounts
+
+External accounts let OmniDock pull and send through provider mailboxes while keeping the dashboard self-hosted. Profiles can be inbound-only, outbound-only, or both.
+
+| External email capability | Details |
+| --- | --- |
+| Provider profiles | Gmail, Outlook, Yahoo, iCloud, and custom IMAP/SMTP settings |
+| Secret-safe storage | OmniDock stores provider metadata and the Worker secret name, not the app password or OAuth secret value |
+| Resumable sync | D1-backed jobs keep folder and UID cursors, so long inbox pulls continue after refreshes or scheduled runs |
+| SMTP sending | Configured external accounts can send outbound mail through their SMTP profile |
+| Operator control | Sync state, account status, provider settings, and audit logs live in the same workstation UI |
+| Public repo safety | Demo docs use placeholder addresses; real external credentials belong only in Cloudflare Worker secrets |
+
+<p align="center">
+  <img src="docs/screenshots/omnidock-external.png" alt="OmniDock external email accounts" width="920">
+</p>
 
 ## What It Does
 
@@ -569,13 +649,13 @@ GitHub does not read a special SEO file for repository topics. Set these fields 
 Recommended repository description:
 
 ```text
-Open-source Cloudflare email dashboard for Workers, Email Routing, Email Sending, D1, R2, support inboxes, contacts, signatures, Gmail sync, and R2 file management.
+Open-source Cloudflare email and R2 dashboard with Email Routing, Email Sending, D1, R2 file manager, PDF preview, indexed R2 search, Gmail sync, and external IMAP/SMTP.
 ```
 
 Recommended topics:
 
 ```text
-cloudflare cloudflare-workers cloudflare-email-routing cloudflare-email-sending cloudflare-d1 cloudflare-r2 workers-ai email-dashboard support-inbox self-hosted-email email-routing email-sending r2-storage r2-bucket-manager d1-database gmail-sync imap smtp pdf-preview ocr-indexing document-search react typescript serverless open-source
+cloudflare cloudflare-workers cloudflare-email-routing cloudflare-email-sending cloudflare-d1 cloudflare-r2 r2-file-manager r2-bucket-manager r2-storage workers-ai email-dashboard support-inbox self-hosted-email email-routing email-sending d1-database gmail-sync external-email external-imap external-smtp imap smtp pdf-preview file-preview ocr-indexing document-search react typescript serverless open-source
 ```
 
 Recommended website URL:
@@ -601,23 +681,23 @@ OmniDock is released under the MIT License. See [LICENSE](LICENSE).
 Meta title:
 
 ```text
-OmniDock - Open-source Cloudflare email dashboard
+OmniDock - Cloudflare email and R2 dashboard
 ```
 
 Meta description:
 
 ```text
-OmniDock is a self-hosted Cloudflare Workers email dashboard for Email Routing, Email Sending, D1, R2, support inboxes, contacts, signatures, Gmail sync, and R2 file management.
+OmniDock is a self-hosted Cloudflare Workers email and R2 dashboard for Email Routing, Email Sending, D1, R2 bucket management, PDF preview, indexed R2 search, Gmail sync, and external IMAP/SMTP.
 ```
 
 Short product pitch:
 
 ```text
-OmniDock turns Cloudflare Workers, Email Routing, Email Sending, D1, R2, and Workers AI into a private email operations dashboard for support inboxes, multi-domain routing, Gmail and external IMAP/SMTP sync, contacts, signatures, attachments, logs, R2 bucket management, file preview, upload workflows, and indexed OCR/document search.
+OmniDock turns Cloudflare Workers, Email Routing, Email Sending, D1, R2, and Workers AI into a private email and file operations dashboard for support inboxes, multi-domain routing, Gmail and external IMAP/SMTP sync, contacts, signatures, attachments, logs, R2 bucket management, PDF/image/text preview, upload workflows, and indexed OCR/document search.
 ```
 
 Search phrases this README intentionally covers:
 
 ```text
-Cloudflare email dashboard, Cloudflare Workers email app, Cloudflare Email Routing UI, Cloudflare Email Sending dashboard, open-source support inbox, self-hosted email management, D1 email database, R2 attachment storage, R2 file manager, R2 bucket manager, Workers AI document extraction, Gmail IMAP sync, external SMTP sending, PDF preview, attachment preview, OCR text indexing, serverless email dashboard, multi-domain email inbox.
+Cloudflare email dashboard, Cloudflare Workers email app, Cloudflare Email Routing UI, Cloudflare Email Sending dashboard, open-source support inbox, self-hosted email management, D1 email database, R2 attachment storage, R2 file manager, R2 bucket manager, R2 folder browser, Cloudflare R2 PDF preview, indexed R2 search, Workers AI document extraction, Gmail IMAP sync, external IMAP sync, external SMTP sending, PDF preview, attachment preview, OCR text indexing, serverless email dashboard, multi-domain email inbox.
 ```
