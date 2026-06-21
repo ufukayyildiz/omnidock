@@ -1983,10 +1983,11 @@ function Sidebar({
       <nav className="nav-group">
         {folders.map((item) => {
           const Icon = item.icon;
+          const active = view === "mail" && folder === item.key;
           return (
             <button
               key={item.key}
-              className={folder === item.key ? "nav-item active" : "nav-item"}
+              className={active ? "nav-item active" : "nav-item"}
               type="button"
               onClick={() => onFolderChange(item.key)}
             >
