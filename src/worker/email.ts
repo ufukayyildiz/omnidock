@@ -21,6 +21,7 @@ import {
 } from "./db";
 import { ApiError, RuntimeEnv, isRecord } from "./http";
 import { htmlToPlainText as htmlToText } from "./html";
+import { classifyJunkMail } from "./junk";
 import { ensureDatabaseSchema } from "./schema";
 import {
   limitInboundAttachments,
@@ -84,6 +85,14 @@ export async function receiveEmail(
   const subject = parsed.subject ?? message.headers.get("subject") ?? "";
   const textBody = parsed.text ?? null;
   const htmlBody = parsed.html ?? null;
+  const junk = classifyJunkMail({
+    headers: message.headers,
+    parsedHeaders: parsed.headers,
+    subject,
+    text: textBody,
+    html: htmlBody
+  });
+  const receivedAt = nowIso();
   const inReplyTo = message.headers.get("in-reply-to");
   const referencesHeader = message.headers.get("references");
   const messageId = message.headers.get("message-id");
@@ -130,7 +139,8 @@ export async function receiveEmail(
     inReplyTo,
     referencesHeader,
     rawR2Key,
-    receivedAt: nowIso()
+    junkAt: junk.junk ? receivedAt : null,
+    receivedAt
   });
 
   const inboundAttachments = limitInboundAttachments(parsed.attachments ?? []);
@@ -165,7 +175,10 @@ export async function receiveEmail(
     attachments: inboundAttachments.accepted.length,
     skippedAttachments: inboundAttachments.skipped,
     skippedAttachmentBytes: inboundAttachments.skippedBytes,
-    skippedAttachmentReasons: inboundAttachments.skippedReasons
+    skippedAttachmentReasons: inboundAttachments.skippedReasons,
+    folder: junk.junk ? "junk" : "inbox",
+    junkScore: junk.score,
+    junkReasons: junk.reasons
   });
   return stored;
 }

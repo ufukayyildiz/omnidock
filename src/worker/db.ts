@@ -53,6 +53,12 @@ export type MessageRow = {
   error: string | null;
   read_at: string | null;
   archived_at: string | null;
+  deleted_at: string | null;
+  junk_at: string | null;
+  external_account_id: string | null;
+  external_folder: string | null;
+  external_uid: number | null;
+  external_deleted_at: string | null;
   received_at: string | null;
   created_at: string;
 };
@@ -175,6 +181,12 @@ export type NewMessage = {
   sentMessageId?: string | null;
   error?: string | null;
   readAt?: string | null;
+  deletedAt?: string | null;
+  junkAt?: string | null;
+  externalAccountId?: string | null;
+  externalFolder?: string | null;
+  externalUid?: number | null;
+  externalDeletedAt?: string | null;
   receivedAt?: string | null;
   createdAt?: string | null;
 };
@@ -805,8 +817,9 @@ export async function insertMessage(env: RuntimeEnv, message: NewMessage): Promi
     `INSERT INTO messages (
       id, thread_id, direction, mailbox, domain, from_address, from_name, to_json, cc_json, bcc_json,
       subject, snippet, text_body, html_body, message_id, in_reply_to, references_header, raw_r2_key,
-      sent_status, sent_message_id, error, read_at, received_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      sent_status, sent_message_id, error, read_at, archived_at, deleted_at, junk_at,
+      external_account_id, external_folder, external_uid, external_deleted_at, received_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -831,6 +844,13 @@ export async function insertMessage(env: RuntimeEnv, message: NewMessage): Promi
       message.sentMessageId ?? null,
       message.error ?? null,
       message.readAt ?? null,
+      null,
+      message.deletedAt ?? null,
+      message.junkAt ?? null,
+      message.externalAccountId ?? null,
+      message.externalFolder ?? null,
+      message.externalUid ?? null,
+      message.externalDeletedAt ?? null,
       message.receivedAt ?? null,
       message.createdAt ?? nowIso()
     )
@@ -929,16 +949,27 @@ export async function listThreads(
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 80), 1), 200);
   const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
 
-  if (!searchTerm) {
-    if (options.folder === "sent") {
-      filters.push("m.direction = 'outbound'");
-      filters.push("m.archived_at IS NULL");
-    } else if (options.folder === "archive") {
-      filters.push("m.archived_at IS NOT NULL");
-    } else {
-      filters.push("m.direction = 'inbound'");
-      filters.push("m.archived_at IS NULL");
-    }
+  if (options.folder === "sent") {
+    filters.push("m.direction = 'outbound'");
+    filters.push("m.archived_at IS NULL");
+    filters.push("m.deleted_at IS NULL");
+    filters.push("m.junk_at IS NULL");
+  } else if (options.folder === "archive") {
+    filters.push("m.archived_at IS NOT NULL");
+    filters.push("m.deleted_at IS NULL");
+    filters.push("m.junk_at IS NULL");
+  } else if (options.folder === "trash") {
+    filters.push("m.deleted_at IS NOT NULL");
+  } else if (options.folder === "junk") {
+    filters.push("m.junk_at IS NOT NULL");
+    filters.push("m.deleted_at IS NULL");
+  } else if (options.folder === "inbox") {
+    filters.push("m.direction = 'inbound'");
+    filters.push("m.archived_at IS NULL");
+    filters.push("m.deleted_at IS NULL");
+    filters.push("m.junk_at IS NULL");
+  } else {
+    throw new ApiError(400, "invalid_folder", "Folder is invalid");
   }
 
   if (options.domainId) {
@@ -1061,9 +1092,48 @@ export async function markThreadRead(env: RuntimeEnv, threadId: string): Promise
 }
 
 export async function archiveThread(env: RuntimeEnv, threadId: string, archived: boolean): Promise<void> {
-  await env.DB.prepare("UPDATE messages SET archived_at = ? WHERE thread_id = ?")
+  await env.DB.prepare("UPDATE messages SET archived_at = ?, deleted_at = NULL, junk_at = NULL WHERE thread_id = ?")
     .bind(archived ? nowIso() : null, threadId)
     .run();
+}
+
+export async function moveThreadToTrash(env: RuntimeEnv, threadId: string): Promise<number> {
+  const result = await env.DB.prepare(
+    "UPDATE messages SET deleted_at = ?, junk_at = NULL, archived_at = NULL WHERE thread_id = ?"
+  )
+    .bind(nowIso(), threadId)
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+export async function restoreThread(env: RuntimeEnv, threadId: string): Promise<number> {
+  const result = await env.DB.prepare(
+    "UPDATE messages SET deleted_at = NULL, junk_at = NULL, archived_at = NULL WHERE thread_id = ?"
+  )
+    .bind(threadId)
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+export async function markThreadJunk(env: RuntimeEnv, threadId: string, junk: boolean): Promise<number> {
+  const result = await env.DB.prepare(
+    junk
+      ? "UPDATE messages SET junk_at = ?, deleted_at = NULL, archived_at = NULL WHERE thread_id = ?"
+      : "UPDATE messages SET junk_at = NULL, deleted_at = NULL, archived_at = NULL WHERE thread_id = ?"
+  )
+    .bind(...(junk ? [nowIso(), threadId] : [threadId]))
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+export async function markExternalMessagesDeleted(env: RuntimeEnv, messageIds: string[]): Promise<void> {
+  if (messageIds.length === 0) return;
+  const deletedAt = nowIso();
+  for (const messageId of messageIds) {
+    await env.DB.prepare("UPDATE messages SET external_deleted_at = ? WHERE id = ?")
+      .bind(deletedAt, messageId)
+      .run();
+  }
 }
 
 export async function listThreadStorageKeys(env: RuntimeEnv, threadId: string): Promise<string[]> {
@@ -1122,10 +1192,12 @@ export async function getStats(env: RuntimeEnv): Promise<Record<string, number>>
       (SELECT COUNT(*) FROM contacts) AS contacts,
       (SELECT COUNT(*) FROM external_accounts) AS external_accounts,
       (SELECT COUNT(*) FROM audit_log) AS audit_logs,
-      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND archived_at IS NULL) AS inbox,
-      (SELECT COUNT(*) FROM messages WHERE direction = 'outbound' AND archived_at IS NULL) AS sent,
-      (SELECT COUNT(*) FROM messages WHERE archived_at IS NOT NULL) AS archive,
-      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND read_at IS NULL AND archived_at IS NULL) AS unread`
+      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND archived_at IS NULL AND deleted_at IS NULL AND junk_at IS NULL) AS inbox,
+      (SELECT COUNT(*) FROM messages WHERE direction = 'outbound' AND archived_at IS NULL AND deleted_at IS NULL AND junk_at IS NULL) AS sent,
+      (SELECT COUNT(*) FROM messages WHERE archived_at IS NOT NULL AND deleted_at IS NULL AND junk_at IS NULL) AS archive,
+      (SELECT COUNT(*) FROM messages WHERE deleted_at IS NOT NULL) AS trash,
+      (SELECT COUNT(*) FROM messages WHERE junk_at IS NOT NULL AND deleted_at IS NULL) AS junk,
+      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND read_at IS NULL AND archived_at IS NULL AND deleted_at IS NULL AND junk_at IS NULL) AS unread`
   ).first<Record<string, number>>();
 
   return rows ?? defaultStats();
@@ -1151,12 +1223,24 @@ export async function getMailboxStats(env: RuntimeEnv, mailboxId: string | null)
       (SELECT COUNT(*) FROM contacts) AS contacts,
       (SELECT COUNT(*) FROM external_accounts) AS external_accounts,
       (SELECT COUNT(*) FROM audit_log) AS audit_logs,
-      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND archived_at IS NULL AND mailbox = ?) AS inbox,
-      (SELECT COUNT(*) FROM messages WHERE direction = 'outbound' AND archived_at IS NULL AND from_address = ?) AS sent,
-      (SELECT COUNT(*) FROM messages WHERE archived_at IS NOT NULL AND (mailbox = ? OR (direction = 'outbound' AND from_address = ?))) AS archive,
-      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND read_at IS NULL AND archived_at IS NULL AND mailbox = ?) AS unread`
+      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND archived_at IS NULL AND deleted_at IS NULL AND junk_at IS NULL AND mailbox = ?) AS inbox,
+      (SELECT COUNT(*) FROM messages WHERE direction = 'outbound' AND archived_at IS NULL AND deleted_at IS NULL AND junk_at IS NULL AND from_address = ?) AS sent,
+      (SELECT COUNT(*) FROM messages WHERE archived_at IS NOT NULL AND deleted_at IS NULL AND junk_at IS NULL AND (mailbox = ? OR (direction = 'outbound' AND from_address = ?))) AS archive,
+      (SELECT COUNT(*) FROM messages WHERE deleted_at IS NOT NULL AND (mailbox = ? OR (direction = 'outbound' AND from_address = ?))) AS trash,
+      (SELECT COUNT(*) FROM messages WHERE junk_at IS NOT NULL AND deleted_at IS NULL AND (mailbox = ? OR (direction = 'outbound' AND from_address = ?))) AS junk,
+      (SELECT COUNT(*) FROM messages WHERE direction = 'inbound' AND read_at IS NULL AND archived_at IS NULL AND deleted_at IS NULL AND junk_at IS NULL AND mailbox = ?) AS unread`
   )
-    .bind(scopedAddress, scopedAddress, scopedAddress, scopedAddress, scopedAddress)
+    .bind(
+      scopedAddress,
+      scopedAddress,
+      scopedAddress,
+      scopedAddress,
+      scopedAddress,
+      scopedAddress,
+      scopedAddress,
+      scopedAddress,
+      scopedAddress
+    )
     .first<Record<string, number>>();
 
   return rows ?? defaultStats();
@@ -1172,6 +1256,8 @@ function defaultStats(): Record<string, number> {
     inbox: 0,
     sent: 0,
     archive: 0,
+    trash: 0,
+    junk: 0,
     unread: 0
   };
 }

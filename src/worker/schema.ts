@@ -13,7 +13,8 @@ const CURRENT_MIGRATIONS = [
   "0010_bucket_text_index.sql",
   "0011_external_sync_jobs.sql",
   "0012_admin_sessions.sql",
-  "0013_bucket_index_jobs.sql"
+  "0013_bucket_index_jobs.sql",
+  "0014_mail_folders_external_metadata.sql"
 ];
 
 let schemaReady: Promise<void> | null = null;
@@ -58,6 +59,15 @@ async function applyDatabaseSchema(env: RuntimeEnv): Promise<void> {
     phone: "TEXT"
   });
 
+  await addMissingColumns(env, "messages", {
+    deleted_at: "TEXT",
+    junk_at: "TEXT",
+    external_account_id: "TEXT",
+    external_folder: "TEXT",
+    external_uid: "INTEGER",
+    external_deleted_at: "TEXT"
+  });
+
   for (const statement of indexStatements) {
     await env.DB.prepare(statement).run();
   }
@@ -69,7 +79,7 @@ async function applyDatabaseSchema(env: RuntimeEnv): Promise<void> {
 
 async function addMissingColumns(
   env: RuntimeEnv,
-  table: "admin_auth" | "contacts" | "domains" | "mailboxes",
+  table: "admin_auth" | "contacts" | "domains" | "mailboxes" | "messages",
   columns: Record<string, string>
 ): Promise<void> {
   const result = await env.DB.prepare(`PRAGMA table_info(${table})`).all<TableInfoRow>();
@@ -135,6 +145,12 @@ const schemaStatements = [
     error TEXT,
     read_at TEXT,
     archived_at TEXT,
+    deleted_at TEXT,
+    junk_at TEXT,
+    external_account_id TEXT,
+    external_folder TEXT,
+    external_uid INTEGER,
+    external_deleted_at TEXT,
     received_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -294,6 +310,9 @@ const indexStatements = [
   "CREATE INDEX IF NOT EXISTS idx_messages_domain ON messages(domain, created_at)",
   "CREATE INDEX IF NOT EXISTS idx_messages_direction ON messages(direction, created_at)",
   "CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)",
+  "CREATE INDEX IF NOT EXISTS idx_messages_deleted ON messages(deleted_at, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_messages_junk ON messages(junk_at, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_messages_external ON messages(external_account_id, external_folder, external_uid)",
   "CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email)",
   "CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name)",
   "CREATE INDEX IF NOT EXISTS idx_mailbox_signatures_mailbox ON mailbox_signatures(mailbox_id)",

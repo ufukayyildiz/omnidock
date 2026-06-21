@@ -63,6 +63,18 @@ export type ExternalAccountInput = {
   notes?: string | null;
 };
 
+export type ThreadDeleteResult = {
+  ok: true;
+  movedMessages: number;
+  externalDelete?: {
+    attempted: number;
+    deleted: number;
+    skipped: number;
+    failed: number;
+    errors: string[];
+  };
+};
+
 export function setupStatus(): Promise<SetupStatusPayload> {
   return publicRequest<SetupStatusPayload>("/api/setup/status");
 }
@@ -259,15 +271,15 @@ export class ApiClient {
     return this.request(`/api/external-accounts/${id}`, { method: "DELETE" });
   }
 
-  patchThread(threadId: string, action: "read" | "archive" | "unarchive"): Promise<unknown> {
+  patchThread(threadId: string, action: "read" | "archive" | "unarchive" | "junk" | "not_junk" | "restore"): Promise<unknown> {
     return this.request(`/api/threads/${threadId}`, {
       method: "PATCH",
       body: JSON.stringify({ action })
     });
   }
 
-  deleteThread(threadId: string): Promise<unknown> {
-    return this.request(`/api/threads/${threadId}`, { method: "DELETE" });
+  deleteThread(threadId: string): Promise<ThreadDeleteResult> {
+    return this.request<ThreadDeleteResult>(`/api/threads/${threadId}`, { method: "DELETE" });
   }
 
   send(input: {

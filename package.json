@@ -35,6 +35,7 @@
     "build": "node tools/prepare-deploy-config.mjs && node tools/validate-deploy-config.mjs && npm run types && tsc --noEmit && vite build",
     "check": "npm run types && tsc --noEmit",
     "test:attachment-limits": "node --experimental-strip-types --test tools/attachment-limits.test.mjs",
+    "test:junk-classifier": "node --experimental-strip-types --test tools/junk-classifier.test.mjs",
     "deploy": "npm run build && node tools/deploy-preserving-bindings.mjs",
     "deploy:with-migrations": "npm run build && npm run db:migrate:remote && node tools/deploy-preserving-bindings.mjs",
     "types": "wrangler types",

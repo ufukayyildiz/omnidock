@@ -23,7 +23,6 @@ import {
   deleteAuditLogs,
   deleteContact,
   deleteExternalAccount,
-  deleteThread,
   createId,
   getExternalAccountById,
   getAttachmentById,
@@ -37,14 +36,16 @@ import {
   listAuditLogs,
   listDomains,
   listExternalAccounts,
-  listThreadStorageKeys,
   listMailboxSignatures,
   listMailboxes,
   listThreads,
+  markThreadJunk,
   markThreadRead,
+  moveThreadToTrash,
   nowIso,
   normalizeDomain,
   recordAudit,
+  restoreThread,
   setDefaultDomain,
   upsertContact,
   upsertExternalAccount,
@@ -58,7 +59,8 @@ import {
   queueAllExternalSyncJobs,
   queueExternalSyncJob,
   runExternalSyncJobs,
-  syncExternalAccount
+  syncExternalAccount,
+  deleteThreadFromExternalMailboxes
 } from "./external-sync";
 import { ensureDatabaseSchema } from "./schema";
 import {
@@ -494,6 +496,24 @@ export async function handleApi(
           await archiveThread(env, threadId, true);
         } else if (action === "unarchive") {
           await archiveThread(env, threadId, false);
+        } else if (action === "junk") {
+          const changed = await markThreadJunk(env, threadId, true);
+          if (changed === 0) {
+            throw new ApiError(404, "thread_not_found", "Thread not found");
+          }
+          ctx.waitUntil(recordAudit(env, "thread.junked", threadId, { messages: changed }));
+        } else if (action === "not_junk") {
+          const changed = await markThreadJunk(env, threadId, false);
+          if (changed === 0) {
+            throw new ApiError(404, "thread_not_found", "Thread not found");
+          }
+          ctx.waitUntil(recordAudit(env, "thread.not_junk", threadId, { messages: changed }));
+        } else if (action === "restore") {
+          const changed = await restoreThread(env, threadId);
+          if (changed === 0) {
+            throw new ApiError(404, "thread_not_found", "Thread not found");
+          }
+          ctx.waitUntil(recordAudit(env, "thread.restored", threadId, { messages: changed }));
         } else {
           throw new ApiError(400, "unknown_action", "Thread action is unknown");
         }
@@ -501,29 +521,19 @@ export async function handleApi(
       }
 
       if (request.method === "DELETE") {
-        const r2Keys = await listThreadStorageKeys(env, threadId);
-        const storageResults = await Promise.allSettled(r2Keys.map((key) => env.MAIL_BUCKET.delete(key)));
-        const failedStorageDeletes = storageResults.filter((result) => result.status === "rejected");
-        if (failedStorageDeletes.length > 0) {
-          throw new ApiError(
-            502,
-            "storage_delete_failed",
-            "Could not delete all stored message objects from R2. Try again."
-          );
-        }
-
-        const deletedMessages = await deleteThread(env, threadId);
-        if (deletedMessages === 0) {
+        const externalDelete = await deleteThreadFromExternalMailboxes(env, threadId);
+        const movedMessages = await moveThreadToTrash(env, threadId);
+        if (movedMessages === 0) {
           throw new ApiError(404, "thread_not_found", "Thread not found");
         }
 
         ctx.waitUntil(
-          recordAudit(env, "thread.deleted", threadId, {
-            deletedMessages,
-            deletedObjects: r2Keys.length
+          recordAudit(env, "thread.moved_to_trash", threadId, {
+            movedMessages,
+            externalDelete
           })
         );
-        return json({ ok: true, deletedMessages, deletedObjects: r2Keys.length });
+        return json({ ok: true, movedMessages, externalDelete });
       }
 
       return methodNotAllowed();

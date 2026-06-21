@@ -42,13 +42,26 @@ import {
   Users,
   X
 } from "lucide-react";
-import { createContext, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  FocusEvent as ReactFocusEvent,
+  FormEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   ApiClient,
   ApiRequestError,
   AttachmentDraft,
   ContactInput,
   ExternalAccountInput,
+  ThreadDeleteResult,
   confirmPasswordReset,
   createAdmin,
   login,
@@ -81,6 +94,7 @@ import {
 
 const DEFAULT_MAILBOX_KEY = "omnidock.defaultMailbox";
 const REFRESH_INTERVAL_KEY = "omnidock.refreshIntervalSeconds";
+const REPLY_COMPOSER_COLLAPSED_KEY = "omnidock.replyComposerCollapsed";
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 10;
 const NOTICE_AUTO_DISMISS_MS = 3000;
 const EXTERNAL_MAILBOX_SCOPE_PREFIX = "external:";
@@ -92,12 +106,15 @@ const EXTERNAL_SYNC_UI_STALE_MS = 70_000;
 const folders: { key: FolderKey; label: string; icon: typeof Inbox }[] = [
   { key: "inbox", label: "Inbox", icon: Inbox },
   { key: "sent", label: "Sent", icon: Send },
-  { key: "archive", label: "Archive", icon: Archive }
+  { key: "archive", label: "Archive", icon: Archive },
+  { key: "junk", label: "Junk", icon: AlertTriangle },
+  { key: "trash", label: "Deleted", icon: Trash2 }
 ];
 
 type ViewKey = "mail" | "buckets" | "rules" | "contacts" | "signatures" | "external" | "logs" | "index-engine" | "notes" | "other-settings";
 type SettingsViewKey = Exclude<ViewKey, "mail" | "buckets">;
 type AuthViewKey = "checking" | "configuration" | "login" | "setup" | "reset-request" | "reset-confirm";
+type ThreadAction = "archive" | "unarchive" | "delete" | "junk" | "not_junk" | "restore";
 type RichEditorValue = { html: string; text: string };
 type SelectOption = {
   value: string;
@@ -223,6 +240,10 @@ const securityOptions: SelectOption[] = [
 function initialRefreshIntervalSeconds(): number {
   const stored = Number(localStorage.getItem(REFRESH_INTERVAL_KEY));
   return Number.isFinite(stored) && stored >= 0 ? stored : DEFAULT_REFRESH_INTERVAL_SECONDS;
+}
+
+function initialReplyComposerCollapsed(): boolean {
+  return localStorage.getItem(REPLY_COMPOSER_COLLAPSED_KEY) === "true";
 }
 
 export function App() {
@@ -887,15 +908,15 @@ function AppContent() {
     setRefreshIntervalSeconds(Math.min(300, Math.max(0, nextValue)));
   };
 
-  async function handleThreadAction(action: "archive" | "unarchive" | "delete") {
-    if (action === "delete") {
+  async function handleThreadAction(action: ThreadAction, message?: string) {
+    if (action === "delete" || action === "junk" || action === "not_junk" || action === "restore") {
       setActiveThreadId(null);
       setThread(null);
       await loadThreads({ clearSelection: true });
     } else {
       await loadThreads({ preserveSelection: true });
     }
-    setNotice(action === "archive" ? "Thread archived" : action === "delete" ? "Thread deleted" : "Thread restored");
+    setNotice(message ?? threadActionNotice(action));
   }
 
   async function syncEverything() {
@@ -994,13 +1015,6 @@ function AppContent() {
 
       <main className="workspace">
         <header className="topbar">
-          <div className="topbar-brand" aria-label="OmniDock control console">
-            <img src="/omnidock-mark.svg" alt="" />
-            <div>
-              <strong>OmniDock</strong>
-              <span>control plane</span>
-            </div>
-          </div>
           {view === "mail" ? (
             <div className="mail-search">
               <div className="search-wrap">
@@ -1790,9 +1804,9 @@ function CustomSelect({
               aria-selected={option.value === value}
               aria-disabled={option.disabled}
             >
-              <span>{option.label}</span>
-              {option.description ? <small>{option.description}</small> : null}
-              {option.value === value ? <CheckCircle2 size={14} /> : null}
+              <span className="custom-select-option-label">{option.label}</span>
+              {option.value === value ? <CheckCircle2 className="custom-select-option-check" size={14} /> : null}
+              {option.description ? <small className="custom-select-option-description">{option.description}</small> : null}
             </button>
           ))}
         </div>
@@ -3491,10 +3505,14 @@ function LogsView({
             <span>{error}</span>
           </div>
         ) : null}
-        <div className="log-table-wrap">
-          {logs.length === 0 ? (
+        <div className="log-table-wrap" aria-busy={loading}>
+          {loading && logs.length === 0 ? (
+            <div className="log-loading-state">
+              <Loader2 className="spin-icon" size={18} />
+              <span>Loading logs</span>
+            </div>
+          ) : logs.length === 0 ? (
             <div className="empty-list">
-              <TerminalSquare size={22} />
               <span>No log rows</span>
             </div>
           ) : (
@@ -4619,7 +4637,7 @@ function BucketObjectPreview({
       <header>
         <div>
           <span>Preview</span>
-          <strong>{object?.name ?? "Select object"}</strong>
+          <strong title={object?.name ?? "Select object"}>{object?.name ?? "Select object"}</strong>
           {object ? (
             <small>
               {object.contentType} · {formatBytes(object.size)}
@@ -4783,6 +4801,7 @@ function RichTextEditor({
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<Range | null>(null);
+  const toolbarInteractionRef = useRef(false);
   const [textColor, setTextColor] = useState("#111827");
   const [backgroundColor, setBackgroundColor] = useState("#fff3bf");
   const dialog = useAppDialog();
@@ -4853,20 +4872,63 @@ function RichTextEditor({
     document.execCommand(command, false, commandValue);
     emitValue();
     saveSelection();
+    toolbarInteractionRef.current = false;
+  }
+
+  function applyInlineStyle(style: { color?: string; backgroundColor?: string }): boolean {
+    const range = restoreSelection();
+    if (!range || range.collapsed || !selectionBelongsToEditor(range)) return false;
+
+    const wrapper = document.createElement("span");
+    if (style.color) wrapper.style.color = style.color;
+    if (style.backgroundColor) wrapper.style.backgroundColor = style.backgroundColor;
+    wrapper.appendChild(range.extractContents());
+    range.insertNode(wrapper);
+
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(wrapper);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(nextRange);
+    selectionRef.current = nextRange.cloneRange();
+    emitValue();
+    saveSelection();
+    toolbarInteractionRef.current = false;
+    return true;
+  }
+
+  function runTextColor(color: string) {
+    if (applyInlineStyle({ color })) return;
+    runCommand("foreColor", color);
   }
 
   function runBackgroundColor(color: string) {
+    if (applyInlineStyle({ backgroundColor: color })) return;
     restoreSelection();
-    if (!document.execCommand("hiliteColor", false, color)) {
-      document.execCommand("backColor", false, color);
-    }
+    document.execCommand("hiliteColor", false, color);
+    document.execCommand("backColor", false, color);
     emitValue();
     saveSelection();
+    toolbarInteractionRef.current = false;
   }
 
   function keepEditorSelection(event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault();
     saveSelection();
+  }
+
+  function handleToolbarMouseDown() {
+    toolbarInteractionRef.current = true;
+    saveSelection();
+  }
+
+  function handleEditorBlur(event: ReactFocusEvent<HTMLDivElement>) {
+    const richEditor = event.currentTarget.closest(".rich-editor");
+    if (toolbarInteractionRef.current || (event.relatedTarget instanceof Node && richEditor?.contains(event.relatedTarget))) {
+      emitValue();
+      return;
+    }
+    emitValue(true);
   }
 
   async function addLink() {
@@ -4885,6 +4947,7 @@ function RichTextEditor({
     applyLinkToSelection(href, selectedRange);
     emitValue(true);
     saveSelection();
+    toolbarInteractionRef.current = false;
   }
 
   function applyLinkToSelection(href: string, range: Range | null) {
@@ -4985,7 +5048,7 @@ function RichTextEditor({
 
   return (
     <div className="rich-editor">
-      <div className="rich-toolbar" aria-label="Message formatting" onMouseDown={saveSelection}>
+      <div className="rich-toolbar" aria-label="Message formatting" onMouseDown={handleToolbarMouseDown}>
         <button className="icon-button" type="button" onMouseDown={keepEditorSelection} onClick={() => runCommand("bold")} title="Bold">
           <Bold size={15} />
         </button>
@@ -5002,7 +5065,7 @@ function RichTextEditor({
             value={textColor}
             onChange={(event) => {
               setTextColor(event.target.value);
-              runCommand("foreColor", event.target.value);
+              runTextColor(event.target.value);
             }}
           />
         </label>
@@ -5025,7 +5088,7 @@ function RichTextEditor({
         className="rich-editor-surface"
         contentEditable
         data-placeholder={placeholder}
-        onBlur={() => emitValue(true)}
+        onBlur={handleEditorBlur}
         onInput={() => {
           emitValue();
           saveSelection();
@@ -5035,6 +5098,9 @@ function RichTextEditor({
           if (event.key === " " || event.key === "Enter") {
             normalizeCurrentEditor();
           }
+        }}
+        onFocus={() => {
+          toolbarInteractionRef.current = false;
         }}
         onMouseUp={saveSelection}
         ref={editorRef}
@@ -5061,7 +5127,7 @@ function ThreadDetail({
   externalAccounts: ExternalAccountRow[];
   folder: FolderKey;
   onSent: () => Promise<void>;
-  onThreadAction: (action: "archive" | "unarchive" | "delete") => Promise<void>;
+  onThreadAction: (action: ThreadAction, message?: string) => Promise<void>;
 }) {
   const [replyDraft, setReplyDraft] = useState<RichEditorValue>({ html: "", text: "" });
   const [from, setFrom] = useState("");
@@ -5070,12 +5136,15 @@ function ThreadDetail({
   const [replyError, setReplyError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentRow | null>(null);
+  const [replyCollapsed, setReplyCollapsed] = useState(initialReplyComposerCollapsed);
   const dialog = useAppDialog();
   const firstMessage = thread?.messages[0] ?? null;
   const lastInbound = [...(thread?.messages ?? [])].reverse().find((message) => message.direction === "inbound");
   const fromOptions = useMemo(() => sendableFromOptions(mailboxes, externalAccounts), [externalAccounts, mailboxes]);
   const preferredFrom = firstMessage?.mailbox ?? fromOptions[0]?.value ?? "";
   const isArchived = Boolean(firstMessage?.archived_at);
+  const isTrash = folder === "trash" || Boolean(firstMessage?.deleted_at);
+  const isJunk = folder === "junk" || Boolean(firstMessage?.junk_at);
 
   useEffect(() => {
     if (preferredFrom && fromOptions.some((option) => option.value === preferredFrom)) {
@@ -5092,6 +5161,10 @@ function ThreadDetail({
     setReplyError(null);
     setPreviewAttachment(null);
   }, [firstMessage?.thread_id]);
+
+  useEffect(() => {
+    localStorage.setItem(REPLY_COMPOSER_COLLAPSED_KEY, replyCollapsed ? "true" : "false");
+  }, [replyCollapsed]);
 
   if (!thread || !firstMessage) {
     return (
@@ -5150,12 +5223,39 @@ function ThreadDetail({
     }
   }
 
+  async function patchJunk() {
+    if (!api || !firstMessage) return;
+    const action = isJunk ? "not_junk" : "junk";
+    setBusyAction(action);
+    try {
+      await api.patchThread(firstMessage.thread_id, action);
+      await onThreadAction(action);
+    } catch (error) {
+      setReplyError(readError(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function restoreCurrentThread() {
+    if (!api || !firstMessage) return;
+    setBusyAction("restore");
+    try {
+      await api.patchThread(firstMessage.thread_id, "restore");
+      await onThreadAction("restore");
+    } catch (error) {
+      setReplyError(readError(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function deleteCurrentThread() {
     if (!api || !firstMessage) return;
     const confirmed = await dialog.confirm({
-      title: "Delete thread",
-      message: "Delete this thread and its stored message files permanently? This cannot be undone.",
-      confirmLabel: "Delete",
+      title: "Move to Deleted",
+      message: "Move this thread to Deleted? Gmail messages will also be moved to Gmail Trash when possible.",
+      confirmLabel: "Move",
       tone: "danger"
     });
     if (!confirmed) return;
@@ -5163,8 +5263,8 @@ function ThreadDetail({
     setReplyError(null);
     setBusyAction("delete");
     try {
-      await api.deleteThread(firstMessage.thread_id);
-      await onThreadAction("delete");
+      const result = await api.deleteThread(firstMessage.thread_id);
+      await onThreadAction("delete", deleteNoticeFromResult(result));
     } catch (error) {
       setReplyError(readError(error));
     } finally {
@@ -5180,14 +5280,29 @@ function ThreadDetail({
           <h2>{firstMessage.subject || "(no subject)"}</h2>
         </div>
         <div className="detail-actions">
-          <button className="button ghost" type="button" onClick={() => void patchArchive()} disabled={busyAction !== null}>
-            {busyAction === "archive" || busyAction === "unarchive" ? <Loader2 className="spin-icon" size={16} /> : <Archive size={16} />}
-            {busyAction === "archive" ? "Archiving" : busyAction === "unarchive" ? "Restoring" : isArchived ? "Unarchive" : "Archive"}
-          </button>
-          <button className="button danger" type="button" onClick={() => void deleteCurrentThread()} disabled={busyAction !== null}>
-            {busyAction === "delete" ? <Loader2 className="spin-icon" size={16} /> : <Trash2 size={16} />}
-            {busyAction === "delete" ? "Deleting" : "Delete"}
-          </button>
+          {isTrash ? (
+            <button className="button ghost" type="button" onClick={() => void restoreCurrentThread()} disabled={busyAction !== null}>
+              {busyAction === "restore" ? <Loader2 className="spin-icon" size={16} /> : <Inbox size={16} />}
+              {busyAction === "restore" ? "Restoring" : "Restore"}
+            </button>
+          ) : (
+            <>
+              {!isJunk ? (
+                <button className="button ghost" type="button" onClick={() => void patchArchive()} disabled={busyAction !== null}>
+                  {busyAction === "archive" || busyAction === "unarchive" ? <Loader2 className="spin-icon" size={16} /> : <Archive size={16} />}
+                  {busyAction === "archive" ? "Archiving" : busyAction === "unarchive" ? "Restoring" : isArchived ? "Unarchive" : "Archive"}
+                </button>
+              ) : null}
+              <button className="button ghost" type="button" onClick={() => void patchJunk()} disabled={busyAction !== null}>
+                {busyAction === "junk" || busyAction === "not_junk" ? <Loader2 className="spin-icon" size={16} /> : <AlertTriangle size={16} />}
+                {busyAction === "junk" ? "Moving" : busyAction === "not_junk" ? "Restoring" : isJunk ? "Not junk" : "Junk"}
+              </button>
+              <button className="button danger" type="button" onClick={() => void deleteCurrentThread()} disabled={busyAction !== null}>
+                {busyAction === "delete" ? <Loader2 className="spin-icon" size={16} /> : <Trash2 size={16} />}
+                {busyAction === "delete" ? "Moving" : "Delete"}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -5204,7 +5319,7 @@ function ThreadDetail({
             {message.html_body ? (
               <div
                 className="message-html"
-                dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(message.html_body) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeReadableEmailHtml(message.html_body) }}
               />
             ) : (
               <div
@@ -5233,47 +5348,65 @@ function ThreadDetail({
         ))}
       </div>
 
-      <form className="reply-box" onSubmit={submitReply}>
-        <div className="reply-tools">
-          <label>
-            From
-            <CustomSelect
-              value={from}
-              onChange={setFrom}
-              options={fromOptions}
-            />
-          </label>
-          <span>
+      <form className={replyCollapsed ? "reply-box is-collapsed" : "reply-box"} onSubmit={submitReply}>
+        <div className="reply-box-header">
+          <div className="reply-summary">
             <Reply size={14} />
-            {lastInbound?.from_address ?? "recipient"}
-          </span>
-        </div>
-        {replyError ? (
-          <div className="login-error compact">
-            <AlertTriangle size={15} />
-            <span>{replyError}</span>
+            <strong>Reply</strong>
+            <span>{lastInbound?.from_address ?? "recipient"}</span>
           </div>
+          <button
+            aria-expanded={!replyCollapsed}
+            className="button ghost reply-toggle"
+            type="button"
+            onClick={() => setReplyCollapsed((current) => !current)}
+          >
+            {replyCollapsed ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+            {replyCollapsed ? "Open reply" : "Hide reply"}
+          </button>
+        </div>
+        {!replyCollapsed ? (
+          <>
+            <div className="reply-tools">
+              <label>
+                From
+                <CustomSelect
+                  value={from}
+                  onChange={setFrom}
+                  options={fromOptions}
+                />
+              </label>
+            </div>
+            {replyError ? (
+              <div className="login-error compact">
+                <AlertTriangle size={15} />
+                <span>{replyError}</span>
+              </div>
+            ) : null}
+            <RichTextEditor value={replyDraft} onChange={setReplyDraft} placeholder="Reply" />
+            <div className="reply-actions-row">
+              <AttachmentPicker
+                value={replyAttachments}
+                onChange={setReplyAttachments}
+                onLoadingChange={setReplyAttachmentsLoading}
+                disabled={busyAction !== null}
+              />
+              <button
+                className="button primary send-button"
+                type="submit"
+                disabled={
+                  busyAction !== null ||
+                  replyAttachmentsLoading ||
+                  (!replyDraft.text.trim() && replyAttachments.length === 0) ||
+                  !from
+                }
+              >
+                <SendHorizontal size={16} />
+                {replyAttachmentsLoading ? "Loading attachments" : busyAction === "reply" ? "Sending" : "Send reply"}
+              </button>
+            </div>
+          </>
         ) : null}
-        <RichTextEditor value={replyDraft} onChange={setReplyDraft} placeholder="Reply" />
-        <AttachmentPicker
-          value={replyAttachments}
-          onChange={setReplyAttachments}
-          onLoadingChange={setReplyAttachmentsLoading}
-          disabled={busyAction !== null}
-        />
-        <button
-          className="button primary send-button"
-          type="submit"
-          disabled={
-            busyAction !== null ||
-            replyAttachmentsLoading ||
-            (!replyDraft.text.trim() && replyAttachments.length === 0) ||
-            !from
-          }
-        >
-          <SendHorizontal size={16} />
-          {replyAttachmentsLoading ? "Loading attachments" : busyAction === "reply" ? "Sending" : "Send reply"}
-        </button>
       </form>
       {previewAttachment ? (
         <AttachmentPreviewDialog
@@ -5891,6 +6024,29 @@ function readError(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function threadActionNotice(action: ThreadAction): string {
+  if (action === "archive") return "Thread archived";
+  if (action === "unarchive") return "Thread restored";
+  if (action === "delete") return "Thread moved to Deleted";
+  if (action === "junk") return "Thread moved to Junk";
+  if (action === "not_junk") return "Thread moved to Inbox";
+  return "Thread restored";
+}
+
+function deleteNoticeFromResult(result: ThreadDeleteResult): string {
+  const external = result.externalDelete;
+  if (!external || external.attempted === 0) {
+    return "Thread moved to Deleted";
+  }
+  if (external.failed > 0) {
+    return `Thread moved to Deleted; Gmail delete failed for ${external.failed} message${external.failed === 1 ? "" : "s"}`;
+  }
+  if (external.skipped > 0) {
+    return `Thread moved to Deleted; ${external.skipped} Gmail message${external.skipped === 1 ? "" : "s"} not found`;
+  }
+  return `Thread moved to Deleted; ${external.deleted} Gmail message${external.deleted === 1 ? "" : "s"} moved to Trash`;
+}
+
 function isAuthError(error: unknown): boolean {
   return error instanceof ApiRequestError && (error.status === 401 || error.status === 403);
 }
@@ -6074,6 +6230,20 @@ function sanitizeEmailHtml(html: string): string {
   const template = document.createElement("template");
   template.innerHTML = html;
   sanitizeHtmlNode(template.content);
+  return template.innerHTML;
+}
+
+function sanitizeReadableEmailHtml(html: string): string {
+  const template = document.createElement("template");
+  template.innerHTML = sanitizeEmailHtml(html);
+  for (const element of Array.from(template.content.querySelectorAll<HTMLElement>("[style]"))) {
+    element.style.removeProperty("color");
+    element.style.removeProperty("background-color");
+    element.style.removeProperty("background");
+    if (!element.getAttribute("style")?.trim()) {
+      element.removeAttribute("style");
+    }
+  }
   return template.innerHTML;
 }
 

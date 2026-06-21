@@ -9,6 +9,7 @@ import {
   insertMessage,
   listExternalAccounts,
   markExternalAccountChecked,
+  markExternalMessagesDeleted,
   messageExistsByMessageId,
   normalizeEmail,
   nowIso,
@@ -17,6 +18,7 @@ import {
 } from "./db";
 import { ApiError, RuntimeEnv, isRecord } from "./http";
 import { htmlToPlainText as htmlToText } from "./html";
+import { classifyJunkMail } from "./junk";
 import { ensureDatabaseSchema } from "./schema";
 
 type SyncOptions = {
@@ -98,6 +100,44 @@ type ParsedAddress = {
 type ImapFolder = {
   name: string;
   attributes: string[];
+};
+
+type ExternalFolderRole = "inbox" | "sent" | "junk" | "trash";
+
+type ExternalDeleteRow = {
+  id: string;
+  message_id: string | null;
+  external_account_id: string | null;
+  external_folder: string | null;
+  external_uid: number | null;
+  account_id: string;
+  provider: string;
+  email: string;
+  display_name: string | null;
+  username: string | null;
+  auth_type: string;
+  credential_secret_name: string | null;
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_security: string;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_security: string;
+  inbound_enabled: number;
+  outbound_enabled: number;
+  status: string;
+  last_checked_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExternalThreadDeleteResult = {
+  attempted: number;
+  deleted: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
 };
 
 const DEFAULT_SYNC_LIMIT = 300;
@@ -336,7 +376,7 @@ async function syncExternalAccountBatch(
       const newestFirst = [...uids]
         .sort((a, b) => b - a)
         .filter((uid) => nextUidExclusive === null || uid < nextUidExclusive);
-      const sentFolder = isSentFolder(folder);
+      const folderRole = externalFolderRole(folder);
 
       for (const uid of newestFirst) {
         if (imported + skipped >= limit || Date.now() - startedAt > maxDurationMs) {
@@ -354,7 +394,11 @@ async function syncExternalAccountBatch(
           continue;
         }
 
-        const stored = await storeExternalRawMessage(env, account, raw, sentFolder);
+        const stored = await storeExternalRawMessage(env, account, raw, {
+          folder,
+          role: folderRole,
+          uid
+        });
         if (stored) {
           imported += 1;
         } else {
@@ -582,7 +626,7 @@ async function storeExternalRawMessage(
   env: RuntimeEnv,
   account: ExternalAccountRow,
   raw: Uint8Array,
-  sentFolder: boolean
+  source: { folder: string; role: ExternalFolderRole; uid: number }
 ): Promise<boolean> {
   const parsed = await PostalMime.parse(raw);
   const mailbox = normalizeEmail(account.email);
@@ -594,6 +638,13 @@ async function storeExternalRawMessage(
   const subject = parsed.subject ?? "";
   const textBody = parsed.text ?? null;
   const htmlBody = parsed.html ?? null;
+  const junk = classifyJunkMail({
+    parsedHeaders: parsed.headers,
+    subject,
+    text: textBody,
+    html: htmlBody
+  });
+  const role: ExternalFolderRole = source.role === "inbox" && junk.junk ? "junk" : source.role;
   const sender = parsed.from && isRecord(parsed.from) ? (parsed.from as ParsedAddress) : null;
   const fromAddress = safeNormalizeEmail(sender?.address, mailbox);
   const to = addressListFromParsed(parsed.to, mailbox);
@@ -622,7 +673,7 @@ async function storeExternalRawMessage(
 
   const stored = await insertMessage(env, {
     threadId,
-    direction: sentFolder ? "outbound" : "inbound",
+    direction: role === "sent" ? "outbound" : "inbound",
     mailbox,
     domain: domainFromEmail(mailbox),
     fromAddress,
@@ -637,8 +688,13 @@ async function storeExternalRawMessage(
     inReplyTo: parsed.inReplyTo ?? null,
     referencesHeader: parsed.references ?? null,
     rawR2Key,
-    sentStatus: sentFolder ? "sent" : null,
-    readAt: sentFolder ? nowIso() : null,
+    sentStatus: role === "sent" ? "sent" : null,
+    readAt: role === "sent" ? nowIso() : null,
+    deletedAt: role === "trash" ? nowIso() : null,
+    junkAt: role === "junk" ? nowIso() : null,
+    externalAccountId: account.id,
+    externalFolder: source.folder,
+    externalUid: source.uid,
     receivedAt: date,
     createdAt: date
   });
@@ -673,6 +729,189 @@ async function storeExternalRawMessage(
   }
 
   return true;
+}
+
+export async function deleteThreadFromExternalMailboxes(
+  env: RuntimeEnv,
+  threadId: string
+): Promise<ExternalThreadDeleteResult> {
+  await ensureDatabaseSchema(env);
+  const result = await env.DB.prepare(
+    `SELECT
+       m.id,
+       m.message_id,
+       m.external_account_id,
+       m.external_folder,
+       m.external_uid,
+       a.id AS account_id,
+       a.provider,
+       a.email,
+       a.display_name,
+       a.username,
+       a.auth_type,
+       a.credential_secret_name,
+       a.imap_host,
+       a.imap_port,
+       a.imap_security,
+       a.smtp_host,
+       a.smtp_port,
+       a.smtp_security,
+       a.inbound_enabled,
+       a.outbound_enabled,
+       a.status,
+       a.last_checked_at,
+       a.notes,
+       a.created_at,
+       a.updated_at
+     FROM messages m
+     INNER JOIN external_accounts a
+       ON (
+         (m.external_account_id IS NOT NULL AND a.id = m.external_account_id)
+         OR (m.external_account_id IS NULL AND a.email = m.mailbox)
+       )
+     WHERE m.thread_id = ?
+       AND m.external_deleted_at IS NULL
+       AND lower(a.provider) = 'gmail'`
+  )
+    .bind(threadId)
+    .all<ExternalDeleteRow>();
+
+  const rows = result.results ?? [];
+  const summary: ExternalThreadDeleteResult = {
+    attempted: rows.length,
+    deleted: 0,
+    skipped: 0,
+    failed: 0,
+    errors: []
+  };
+  if (rows.length === 0) return summary;
+
+  const byAccount = new Map<string, ExternalDeleteRow[]>();
+  for (const row of rows) {
+    byAccount.set(row.account_id, [...(byAccount.get(row.account_id) ?? []), row]);
+  }
+
+  const deletedLocalIds: string[] = [];
+  for (const accountRows of byAccount.values()) {
+    const account = accountFromDeleteRow(accountRows[0]);
+    if (!account.imap_host || !account.imap_port || account.auth_type !== "app_password") {
+      summary.failed += accountRows.length;
+      summary.errors.push(`${account.email}: Gmail IMAP credentials are not configured`);
+      continue;
+    }
+
+    let imap: ImapClient | null = null;
+    try {
+      imap = await ImapClient.open({
+        host: account.imap_host,
+        port: account.imap_port,
+        security: account.imap_security
+      });
+      await imap.login(account.username || account.email, externalCredential(env, account));
+      const discovered = await imap.listFolders();
+      const trashFolder = externalTrashFolder(account.provider, discovered);
+
+      for (const row of accountRows) {
+        try {
+          const deleted = await deleteExternalMessage(imap, account, row, discovered, trashFolder);
+          if (deleted) {
+            summary.deleted += 1;
+            deletedLocalIds.push(row.id);
+          } else {
+            summary.skipped += 1;
+          }
+        } catch (error) {
+          summary.failed += 1;
+          summary.errors.push(`${account.email}: ${error instanceof Error ? error.message : "Gmail message delete failed"}`);
+        }
+      }
+    } catch (error) {
+      summary.failed += accountRows.length;
+      summary.errors.push(`${account.email}: ${error instanceof Error ? error.message : "Gmail delete failed"}`);
+    } finally {
+      await imap?.logout().catch(() => undefined);
+    }
+  }
+
+  await markExternalMessagesDeleted(env, deletedLocalIds);
+  return summary;
+}
+
+async function deleteExternalMessage(
+  imap: ImapClient,
+  account: ExternalAccountRow,
+  row: ExternalDeleteRow,
+  discovered: ImapFolder[],
+  trashFolder: string
+): Promise<boolean> {
+  const folders = uniqueStrings(
+    [
+      row.external_folder,
+      ...externalSyncFolders(account.provider, discovered),
+      trashFolder
+    ].filter(Boolean) as string[]
+  );
+
+  for (const folder of folders) {
+    const selected = await imap.select(folder);
+    if (!selected) continue;
+
+    const uidMatches =
+      row.external_uid && row.external_folder && row.external_folder.toLowerCase() === folder.toLowerCase()
+        ? [row.external_uid]
+        : [];
+    const headerMatches = row.message_id ? await imap.searchHeader("Message-ID", row.message_id).catch(() => []) : [];
+    const uids = uniqueNumbers([...uidMatches, ...headerMatches]);
+    if (uids.length === 0) continue;
+
+    for (const uid of uids) {
+      await moveOrDeleteUid(imap, uid, folder, trashFolder);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function moveOrDeleteUid(imap: ImapClient, uid: number, sourceFolder: string, trashFolder: string): Promise<void> {
+  if (sourceFolder.toLowerCase() !== trashFolder.toLowerCase()) {
+    try {
+      await imap.moveUidToFolder(uid, trashFolder);
+      return;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== "imap_command_failed") {
+        throw error;
+      }
+    }
+  }
+
+  await imap.markUidDeleted(uid);
+  await imap.expunge();
+}
+
+function accountFromDeleteRow(row: ExternalDeleteRow): ExternalAccountRow {
+  return {
+    id: row.account_id,
+    provider: row.provider,
+    email: row.email,
+    display_name: row.display_name,
+    username: row.username,
+    auth_type: row.auth_type,
+    credential_secret_name: row.credential_secret_name,
+    imap_host: row.imap_host,
+    imap_port: row.imap_port,
+    imap_security: row.imap_security,
+    smtp_host: row.smtp_host,
+    smtp_port: row.smtp_port,
+    smtp_security: row.smtp_security,
+    inbound_enabled: row.inbound_enabled,
+    outbound_enabled: row.outbound_enabled,
+    status: row.status,
+    last_checked_at: row.last_checked_at,
+    notes: row.notes,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
 }
 
 class ImapClient {
@@ -726,6 +965,18 @@ class ImapClient {
     }
   }
 
+  async select(folder: string): Promise<boolean> {
+    try {
+      await this.command(`SELECT ${quoteImapString(folder)}`);
+      return true;
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "imap_command_failed") {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   async searchAll(): Promise<number[]> {
     const response = await this.command("UID SEARCH ALL");
     const line = response.text.split(/\r\n/).find((item) => item.toUpperCase().startsWith("* SEARCH "));
@@ -736,6 +987,11 @@ class ImapClient {
       .split(/\s+/)
       .map((item) => Number.parseInt(item, 10))
       .filter((uid) => Number.isInteger(uid) && uid > 0);
+  }
+
+  async searchHeader(header: string, value: string): Promise<number[]> {
+    const response = await this.command(`UID SEARCH HEADER ${quoteImapAtom(header)} ${quoteImapString(value)}`);
+    return parseSearchUids(response.text);
   }
 
   async listFolders(): Promise<ImapFolder[]> {
@@ -749,6 +1005,18 @@ class ImapClient {
   async fetchRaw(uid: number): Promise<Uint8Array | null> {
     const response = await this.command(`UID FETCH ${uid} (BODY.PEEK[])`, IMAP_FETCH_TIMEOUT_MS, "IMAP message fetch");
     return response.literals.sort((a, b) => b.byteLength - a.byteLength)[0] ?? null;
+  }
+
+  async moveUidToFolder(uid: number, folder: string): Promise<void> {
+    await this.command(`UID MOVE ${uid} ${quoteImapString(folder)}`, IMAP_COMMAND_TIMEOUT_MS, "IMAP message move");
+  }
+
+  async markUidDeleted(uid: number): Promise<void> {
+    await this.command(`UID STORE ${uid} +FLAGS.SILENT (\\Deleted)`, IMAP_COMMAND_TIMEOUT_MS, "IMAP message delete");
+  }
+
+  async expunge(): Promise<void> {
+    await this.command("EXPUNGE", IMAP_COMMAND_TIMEOUT_MS, "IMAP expunge");
   }
 
   async logout(): Promise<void> {
@@ -892,8 +1160,12 @@ function describeImapCommand(command: string): string {
   const upper = command.trim().toUpperCase();
   if (upper.startsWith("LOGIN")) return "IMAP login";
   if (upper.startsWith("EXAMINE")) return "IMAP folder open";
+  if (upper.startsWith("SELECT")) return "IMAP folder select";
   if (upper.startsWith("UID SEARCH")) return "IMAP search";
   if (upper.startsWith("UID FETCH")) return "IMAP message fetch";
+  if (upper.startsWith("UID MOVE")) return "IMAP message move";
+  if (upper.startsWith("UID STORE")) return "IMAP message delete";
+  if (upper.startsWith("EXPUNGE")) return "IMAP expunge";
   return "IMAP command";
 }
 
@@ -908,6 +1180,7 @@ function externalCredential(env: RuntimeEnv, account: ExternalAccountRow): strin
 
 function externalSyncFolders(provider: string, discovered: ImapFolder[] = []): string[] {
   const sent = discovered.find((folder) => folder.attributes.some((attribute) => attribute.toLowerCase() === "\\sent"))?.name;
+  const junk = externalJunkFolder(provider, discovered);
   const fallback =
     provider === "gmail"
       ? "[Gmail]/Sent Mail"
@@ -916,15 +1189,51 @@ function externalSyncFolders(provider: string, discovered: ImapFolder[] = []): s
         : provider === "icloud"
           ? "Sent Messages"
           : "Sent";
-  return uniqueStrings(["INBOX", sent, fallback].filter(Boolean) as string[]);
+  const junkFallback = provider === "gmail" ? "[Gmail]/Spam" : "Junk";
+  return uniqueStrings(["INBOX", sent, fallback, junk, junkFallback, "Spam"].filter(Boolean) as string[]);
 }
 
-function isSentFolder(folder: string): boolean {
-  return /sent/i.test(folder);
+function externalFolderRole(folder: string): ExternalFolderRole {
+  const normalized = folder.toLowerCase();
+  if (/sent/.test(normalized)) return "sent";
+  if (/spam|junk|bulk/.test(normalized)) return "junk";
+  if (/trash|deleted|bin/.test(normalized)) return "trash";
+  return "inbox";
+}
+
+function externalTrashFolder(provider: string, discovered: ImapFolder[] = []): string {
+  const trash = discovered.find((folder) => folder.attributes.some((attribute) => attribute.toLowerCase() === "\\trash"))?.name;
+  if (trash) return trash;
+  if (provider === "gmail") return "[Gmail]/Trash";
+  if (provider === "outlook") return "Deleted Items";
+  return "Trash";
+}
+
+function externalJunkFolder(provider: string, discovered: ImapFolder[] = []): string | null {
+  const junk = discovered.find((folder) => folder.attributes.some((attribute) => attribute.toLowerCase() === "\\junk"))?.name;
+  if (junk) return junk;
+  const named = discovered.find((folder) => /(^|[/\\])(spam|junk|bulk)$/i.test(folder.name));
+  if (named) return named.name;
+  return provider === "gmail" ? "[Gmail]/Spam" : null;
 }
 
 function quoteImapString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]/g, " ")}"`;
+}
+
+function quoteImapAtom(value: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(value) ? value : quoteImapString(value);
+}
+
+function parseSearchUids(text: string): number[] {
+  const line = text.split(/\r\n/).find((item) => item.toUpperCase().startsWith("* SEARCH "));
+  if (!line) return [];
+  return line
+    .slice("* SEARCH ".length)
+    .trim()
+    .split(/\s+/)
+    .map((item) => Number.parseInt(item, 10))
+    .filter((uid) => Number.isInteger(uid) && uid > 0);
 }
 
 function sanitizeImapStatus(value: string): string {
@@ -967,6 +1276,15 @@ function uniqueStrings(values: string[]): string[] {
     const key = value.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
+    return true;
+  });
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  const seen = new Set<number>();
+  return values.filter((value) => {
+    if (!Number.isInteger(value) || value <= 0 || seen.has(value)) return false;
+    seen.add(value);
     return true;
   });
 }

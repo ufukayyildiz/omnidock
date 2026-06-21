@@ -51,6 +51,12 @@ export type MessageRow = {
   error: string | null;
   read_at: string | null;
   archived_at: string | null;
+  deleted_at: string | null;
+  junk_at: string | null;
+  external_account_id: string | null;
+  external_folder: string | null;
+  external_uid: number | null;
+  external_deleted_at: string | null;
   received_at: string | null;
   created_at: string;
 };
@@ -303,4 +309,4 @@ export type ThreadPayload = {
   attachments: AttachmentRow[];
 };
 
-export type FolderKey = "inbox" | "sent" | "archive";
+export type FolderKey = "inbox" | "sent" | "archive" | "trash" | "junk";
