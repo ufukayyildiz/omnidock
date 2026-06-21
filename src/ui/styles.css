@@ -6,33 +6,33 @@
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --desktop: #f5f6f2;
-  --bg: #f5f6f2;
-  --panel: #f8faf7;
-  --panel-alt: #eef1ea;
-  --sidebar: #eef1ea;
-  --titlebar: #eef1ea;
-  --titlebar-strong: #e8ede3;
-  --control: #f8faf7;
-  --control-hover: #eef1ea;
-  --line: #cbd5d1;
+  --desktop: #f6f7f3;
+  --bg: #f6f7f3;
+  --panel: #fafbf9;
+  --panel-alt: #ecf1ea;
+  --sidebar: #ecf1ea;
+  --titlebar: #ecf1ea;
+  --titlebar-strong: #e2e8de;
+  --control: #fafbf9;
+  --control-hover: #ecf1ea;
+  --line: #ccd6d2;
   --line-strong: #b7c3bd;
-  --input-line: #687a74;
+  --input-line: #687d73;
   --text: #020617;
   --muted: #475569;
   --muted-soft: #64748b;
-  --soft: #eef1ea;
-  --accent: #0f766e;
+  --soft: #ecf1ea;
+  --accent: #0f756d;
   --accent-strong: #115e59;
   --accent-contrast: #ffffff;
-  --accent-soft: #edf7f4;
-  --selected: #e8ede3;
-  --selected-line: #0f766e;
-  --hover-bg: #eef1ea;
+  --accent-soft: #e2e8de;
+  --selected: #e2e8de;
+  --selected-line: #0f756d;
+  --hover-bg: #ecf1ea;
   --hover-line: #b7c3bd;
   --hover-text: #0f172a;
   --primary-hover: #115e59;
-  --brand: #c76b36;
+  --brand: #c86c37;
   --brand-soft: #fff1e8;
   --brand-line: #c76b36;
   --warn: #d97706;
@@ -298,6 +298,23 @@ button:hover:not(:disabled) {
 .nav-item.active span,
 .settings-link.active span,
 .domain-link.active span {
+  color: #ffffff;
+}
+
+.nav-item.active:hover,
+.settings-link.active:hover,
+.domain-link.active:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.nav-item.active:hover b,
+.settings-link.active:hover b,
+.domain-link.active:hover b,
+.nav-item.active:hover span,
+.settings-link.active:hover span,
+.domain-link.active:hover span {
   color: #ffffff;
 }
 
@@ -1399,6 +1416,17 @@ button:hover:not(:disabled) {
   color: var(--hover-text);
 }
 
+.bucket-row.active:hover {
+  border-color: var(--selected-line);
+  background: var(--selected);
+  color: var(--text);
+}
+
+.bucket-row.active:hover b,
+.bucket-row.active:hover small {
+  color: var(--muted);
+}
+
 .bucket-row.object {
   grid-template-rows: 18px 15px;
   min-height: 52px;
@@ -1731,6 +1759,12 @@ button:hover:not(:disabled) {
 }
 
 .domain-chip.active {
+  border-color: var(--selected-line);
+  background: var(--selected);
+  color: var(--text);
+}
+
+.domain-chip.active:hover {
   border-color: var(--selected-line);
   background: var(--selected);
   color: var(--text);
@@ -2128,6 +2162,13 @@ button:hover:not(:disabled) {
   color: var(--text);
 }
 
+.contact-row.active:hover {
+  border-color: var(--line);
+  border-left-color: var(--accent);
+  background: var(--selected);
+  color: var(--text);
+}
+
 .contact-row small {
   display: inline-flex;
   align-items: center;
@@ -2170,6 +2211,12 @@ button:hover:not(:disabled) {
 
 .signature-mailbox.active,
 .external-account-row.active {
+  background: var(--selected);
+  color: var(--text);
+}
+
+.signature-mailbox.active:hover,
+.external-account-row.active:hover {
   background: var(--selected);
   color: var(--text);
 }
@@ -2442,6 +2489,11 @@ button:hover:not(:disabled) {
 }
 
 .thread-row.active {
+  background: var(--selected);
+  color: var(--text);
+}
+
+.thread-row.active:hover {
   background: var(--selected);
   color: var(--text);
 }
