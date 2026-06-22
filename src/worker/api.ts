@@ -947,7 +947,7 @@ const MAX_BUCKET_TEXT_FILE_TIMEOUT_MS = 3_500;
 const R2_FOLDER_MARKER_NAME = ".omnidock-folder";
 const R2_FOLDER_MARKER_CONTENT_TYPE = "application/x.omnidock-folder";
 export const BUCKET_INDEX_MAX_RUN_MS = 60_000;
-export const BUCKET_INDEX_SCHEDULED_RUN_MS = 12_000;
+export const BUCKET_INDEX_SCHEDULED_RUN_MS = 6_000;
 const BUCKET_INDEX_HTTP_BACKGROUND_MS = 25_000;
 const BUCKET_INDEX_JOB_ID = "global";
 const BUCKET_INDEX_LEASE_MS = 2 * 60 * 1000;
@@ -1246,6 +1246,7 @@ export async function runBucketIndexJobs(
 
     for (const object of page.objects) {
       if (Date.now() >= deadlineMs) break;
+      if (deadlineMs - Date.now() < 750) break;
       if (isR2FolderMarkerKey(object.key)) {
         delta.skipped += 1;
         continue;
@@ -1259,7 +1260,8 @@ export async function runBucketIndexJobs(
           continue;
         }
 
-        const extraction = await extractBucketIndexText(env, currentBucket, object, Date.now() + BUCKET_INDEX_TEXT_DEADLINE_MS);
+        const extractionDeadlineMs = Math.min(deadlineMs, Date.now() + BUCKET_INDEX_TEXT_DEADLINE_MS);
+        const extraction = await extractBucketIndexText(env, currentBucket, object, extractionDeadlineMs);
         if (extraction.status === "skipped") {
           delta.skipped += 1;
           continue;

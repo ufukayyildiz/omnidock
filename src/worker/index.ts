@@ -3,6 +3,9 @@ import { receiveEmail } from "./email";
 import { EXTERNAL_SYNC_SCHEDULED_RUN_MS, runExternalSyncJobs } from "./external-sync";
 import { RuntimeEnv, json, withSecurityHeaders } from "./http";
 
+const SCHEDULED_MAINTENANCE_MAX_MS = 18_000;
+const SCHEDULED_MAINTENANCE_SAFETY_MS = 1_000;
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const runtimeEnv = env as RuntimeEnv;
@@ -46,11 +49,21 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 async function runScheduledMaintenance(env: RuntimeEnv): Promise<void> {
-  const syncResult = await runExternalSyncJobs(env, { maxDurationMs: EXTERNAL_SYNC_SCHEDULED_RUN_MS });
+  const startedAt = Date.now();
+  const remainingBudget = (): number =>
+    Math.max(0, SCHEDULED_MAINTENANCE_MAX_MS - (Date.now() - startedAt) - SCHEDULED_MAINTENANCE_SAFETY_MS);
+
+  const syncBudget = Math.min(EXTERNAL_SYNC_SCHEDULED_RUN_MS, remainingBudget());
+  if (syncBudget < 5_000) return;
+
+  const syncResult = await runExternalSyncJobs(env, { maxDurationMs: syncBudget });
   if (syncResult.started > 0 || syncResult.hasMore) return;
 
+  const bucketBudget = Math.min(BUCKET_INDEX_SCHEDULED_RUN_MS, remainingBudget());
+  if (bucketBudget < 1_000) return;
+
   try {
-    await runBucketIndexJobs(env, { maxDurationMs: BUCKET_INDEX_SCHEDULED_RUN_MS });
+    await runBucketIndexJobs(env, { maxDurationMs: bucketBudget });
   } catch (error) {
     await recordBucketIndexRunFailure(env, error);
   }
