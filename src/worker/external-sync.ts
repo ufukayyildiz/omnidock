@@ -25,6 +25,7 @@ type SyncOptions = {
   limit?: number;
   cursor?: ExternalSyncCursor;
   maxDurationMs?: number;
+  rawSizeLimitBytes?: number;
   onProgress?: (progress: ExternalSyncProgress) => Promise<void>;
 };
 
@@ -145,6 +146,7 @@ const MAX_SYNC_LIMIT = 800;
 const SYNC_TIME_BUDGET_MS = 22_000;
 export const EXTERNAL_SYNC_HTTP_BACKGROUND_MS = 25_000;
 export const EXTERNAL_SYNC_SCHEDULED_RUN_MS = 8_000;
+const EXTERNAL_SYNC_SCHEDULED_RAW_MAX_BYTES = 1_500_000;
 export const EXTERNAL_SYNC_MAX_RUN_MS = 15 * 60 * 1000;
 const EXTERNAL_SYNC_SAFETY_MS = 3_000;
 const EXTERNAL_SYNC_HEARTBEAT_MS = 4_000;
@@ -264,7 +266,7 @@ export async function queueAllExternalSyncJobs(env: RuntimeEnv): Promise<Externa
 
 export async function runExternalSyncJobs(
   env: RuntimeEnv,
-  options: { accountId?: string; maxDurationMs?: number } = {}
+  options: { accountId?: string; maxDurationMs?: number; scheduled?: boolean } = {}
 ): Promise<ExternalSyncJobRunResult> {
   await ensureDatabaseSchema(env);
   await requeueExpiredExternalSyncJobs(env);
@@ -290,7 +292,9 @@ export async function runExternalSyncJobs(
     }
 
     started += 1;
-    const result = await runExternalSyncJob(env, account, job, Math.max(5_000, deadline - Date.now()));
+    const result = await runExternalSyncJob(env, account, job, Math.max(5_000, deadline - Date.now()), {
+      rawSizeLimitBytes: options.scheduled ? EXTERNAL_SYNC_SCHEDULED_RAW_MAX_BYTES : undefined
+    });
     imported += result.imported;
     skipped += result.skipped;
     checked += result.checked;
@@ -393,6 +397,13 @@ async function syncExternalAccountBatch(
           await reportProgress();
           continue;
         }
+        if (options.rawSizeLimitBytes && raw.byteLength > options.rawSizeLimitBytes) {
+          throw new ApiError(
+            413,
+            "external_message_too_large_for_scheduled_sync",
+            `Scheduled sync stopped before parsing a ${formatBytes(raw.byteLength)} message from ${account.email}. Run Sync manually to import large messages.`
+          );
+        }
 
         const stored = await storeExternalRawMessage(env, account, raw, {
           folder,
@@ -465,7 +476,8 @@ async function runExternalSyncJob(
   env: RuntimeEnv,
   account: ExternalAccountRow,
   job: ExternalSyncJobRow,
-  maxDurationMs: number
+  maxDurationMs: number,
+  options: { rawSizeLimitBytes?: number } = {}
 ): Promise<ExternalSyncBatchResult & { failed: boolean }> {
   const leaseUntil = new Date(Date.now() + Math.min(maxDurationMs + EXTERNAL_SYNC_SAFETY_MS, EXTERNAL_SYNC_MAX_RUN_MS)).toISOString();
   await env.DB.prepare(
@@ -516,6 +528,7 @@ async function runExternalSyncJob(
     const result = await syncExternalAccountBatch(env, account, {
       limit: MAX_SYNC_LIMIT,
       maxDurationMs,
+      rawSizeLimitBytes: options.rawSizeLimitBytes,
       cursor: cursorFromJob(latest),
       onProgress: saveProgress
     });
@@ -1350,6 +1363,12 @@ function buildObjectKey(kind: "raw" | "attachments", mailbox: string, filename: 
 
 function makeSnippet(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 240);
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${Math.round(value / 1024)} KB`;
+  return `${value} B`;
 }
 
 function parseEmailDate(value: string | undefined): string {

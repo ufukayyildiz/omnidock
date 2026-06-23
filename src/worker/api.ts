@@ -559,7 +559,7 @@ export async function handleApi(
         previewObject,
         Date.now() + BUCKET_INDEX_TEXT_DEADLINE_MS
       );
-      if (extraction.status === "skipped") {
+      if (extraction.status !== "indexed") {
         throw new ApiError(415, "attachment_preview_unavailable", `Preview unavailable: ${extraction.reason}`);
       }
 
@@ -771,7 +771,7 @@ export async function handleApi(
       }
 
       const extraction = await extractBucketIndexText(env, bucket, object, Date.now() + BUCKET_INDEX_TEXT_DEADLINE_MS);
-      if (extraction.status === "skipped") {
+      if (extraction.status !== "indexed") {
         throw new ApiError(415, "bucket_object_preview_unavailable", `Preview unavailable: ${extraction.reason}`);
       }
 
@@ -994,7 +994,8 @@ type BucketIndexDelta = {
 
 type BucketIndexExtraction =
   | { status: "indexed"; text: string; source: string; ocr: boolean }
-  | { status: "skipped"; reason: string };
+  | { status: "skipped"; reason: string }
+  | { status: "deferred"; reason: string };
 
 function mailBucketInfo(env: RuntimeEnv): BucketInfo {
   const configured = Boolean(env.MAIL_BUCKET);
@@ -1194,7 +1195,7 @@ export async function recordBucketIndexRunFailure(env: RuntimeEnv, error: unknow
 
 export async function runBucketIndexJobs(
   env: RuntimeEnv,
-  options: { maxDurationMs?: number } = {}
+  options: { maxDurationMs?: number; scheduled?: boolean } = {}
 ): Promise<{ job: BucketIndexJobRow | null }> {
   if (!env.DB) return { job: null };
   await ensureDatabaseSchema(env);
@@ -1243,6 +1244,7 @@ export async function runBucketIndexJobs(
       limit: BUCKET_INDEX_PAGE_LIMIT
     });
     const delta: BucketIndexDelta = { scanned: 0, indexed: 0, skipped: 0, failed: 0, ocrIndexed: 0 };
+    let deferredReason: string | null = null;
 
     for (const object of page.objects) {
       if (Date.now() >= deadlineMs) break;
@@ -1261,7 +1263,13 @@ export async function runBucketIndexJobs(
         }
 
         const extractionDeadlineMs = Math.min(deadlineMs, Date.now() + BUCKET_INDEX_TEXT_DEADLINE_MS);
-        const extraction = await extractBucketIndexText(env, currentBucket, object, extractionDeadlineMs);
+        const extraction = await extractBucketIndexText(env, currentBucket, object, extractionDeadlineMs, {
+          allowExpensiveExtraction: !options.scheduled
+        });
+        if (extraction.status === "deferred") {
+          deferredReason = `${extraction.reason}: ${object.key}`;
+          break;
+        }
         if (extraction.status === "skipped") {
           delta.skipped += 1;
           continue;
@@ -1285,16 +1293,18 @@ export async function runBucketIndexJobs(
       }
     }
 
-    const finishedBucket = !page.truncated;
-    const reachedDeadline = Date.now() >= deadlineMs;
+    const finishedBucket = !page.truncated && !deferredReason;
+    const reachedDeadline = Date.now() >= deadlineMs || Boolean(deferredReason);
     const nextBucketIndex = finishedBucket && !reachedDeadline ? bucketPosition + 1 : bucketPosition;
-    const nextCursor = finishedBucket ? null : page.cursor ?? job.cursor;
+    const nextCursor = deferredReason ? job.cursor : finishedBucket ? null : page.truncated ? page.cursor : job.cursor;
     await updateBucketIndexJob(env, {
       status: "queued",
       bucketIndex: nextBucketIndex,
       cursor: nextCursor,
       delta,
-      message: finishedBucket
+      message: deferredReason
+        ? `Scheduled index deferred heavy object. Run Index Engine manually. ${deferredReason}`
+        : finishedBucket
         ? `Indexed ${currentBucket.info.name}; moving to next bucket`
         : `Indexed ${currentBucket.info.name}; cursor saved`,
       lastError: null
@@ -1731,7 +1741,8 @@ async function extractBucketIndexText(
   env: RuntimeEnv,
   bucket: BucketBinding,
   object: R2Object,
-  deadlineMs: number
+  deadlineMs: number,
+  options: { allowExpensiveExtraction?: boolean } = {}
 ): Promise<BucketIndexExtraction> {
   if (object.size > BUCKET_INDEX_OBJECT_MAX_BYTES) {
     return { status: "skipped", reason: "Object is too large for Worker indexing" };
@@ -1742,8 +1753,12 @@ async function extractBucketIndexText(
 
   const contentType = object.httpMetadata?.contentType?.toLowerCase() ?? "";
   const lowerKey = object.key.toLowerCase();
+  const allowExpensiveExtraction = options.allowExpensiveExtraction !== false;
 
   if (isOpenXmlOfficeCandidate(lowerKey, contentType)) {
+    if (!allowExpensiveExtraction) {
+      return { status: "deferred", reason: "Office extraction is deferred outside scheduled runs" };
+    }
     const body = await bucket.bucket.get(object.key);
     if (!body) return { status: "skipped", reason: "Object disappeared before indexing" };
     const extraction = extractOpenXmlOfficeText(await body.arrayBuffer());
@@ -1753,6 +1768,9 @@ async function extractBucketIndexText(
   }
 
   if (isLegacyOfficeCandidate(lowerKey, contentType)) {
+    if (!allowExpensiveExtraction) {
+      return { status: "deferred", reason: "Legacy Office extraction is deferred outside scheduled runs" };
+    }
     if (object.size > BUCKET_INDEX_TEXT_MAX_BYTES) {
       return { status: "skipped", reason: "Legacy Office file is too large for text fallback" };
     }
@@ -1765,6 +1783,9 @@ async function extractBucketIndexText(
   }
 
   if (isPdfSearchCandidate(object)) {
+    if (!allowExpensiveExtraction) {
+      return { status: "deferred", reason: "PDF extraction is deferred outside scheduled runs" };
+    }
     if (object.size > BUCKET_INDEX_TEXT_MAX_BYTES) {
       return { status: "skipped", reason: "PDF is too large for fallback text extraction" };
     }
@@ -1792,6 +1813,9 @@ async function extractBucketIndexText(
   }
 
   if (isAiMarkdownCandidate(object)) {
+    if (!allowExpensiveExtraction) {
+      return { status: "deferred", reason: "AI OCR is deferred outside scheduled runs" };
+    }
     if (!isAiBinding(env.AI)) {
       return { status: "skipped", reason: "Workers AI binding AI is not configured for image OCR" };
     }

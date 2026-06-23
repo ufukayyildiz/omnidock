@@ -56,14 +56,27 @@ async function runScheduledMaintenance(env: RuntimeEnv): Promise<void> {
   const syncBudget = Math.min(EXTERNAL_SYNC_SCHEDULED_RUN_MS, remainingBudget());
   if (syncBudget < 5_000) return;
 
-  const syncResult = await runExternalSyncJobs(env, { maxDurationMs: syncBudget });
+  console.log(JSON.stringify({ event: "scheduled_maintenance.start", syncBudget }));
+  const syncResult = await runExternalSyncJobs(env, { maxDurationMs: syncBudget, scheduled: true });
+  console.log(
+    JSON.stringify({
+      event: "scheduled_maintenance.external_sync",
+      started: syncResult.started,
+      completed: syncResult.completed,
+      failed: syncResult.failed,
+      imported: syncResult.imported,
+      checked: syncResult.checked,
+      hasMore: syncResult.hasMore
+    })
+  );
   if (syncResult.started > 0 || syncResult.hasMore) return;
 
   const bucketBudget = Math.min(BUCKET_INDEX_SCHEDULED_RUN_MS, remainingBudget());
   if (bucketBudget < 1_000) return;
 
   try {
-    await runBucketIndexJobs(env, { maxDurationMs: bucketBudget });
+    const result = await runBucketIndexJobs(env, { maxDurationMs: bucketBudget, scheduled: true });
+    console.log(JSON.stringify({ event: "scheduled_maintenance.bucket_index", status: result.job?.status ?? "none" }));
   } catch (error) {
     await recordBucketIndexRunFailure(env, error);
   }
