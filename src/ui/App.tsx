@@ -984,6 +984,7 @@ function AppContent() {
 
   return (
     <div className="app-shell">
+      <TerminalTabline managementHost={bootstrap?.managementHost ?? window.location.host} view={view} />
       <Sidebar
         managementHost={bootstrap?.managementHost ?? window.location.host}
         mailboxes={mailboxes}
@@ -1193,6 +1194,27 @@ function AppContent() {
           initialFrom={activeMailbox?.address ?? activeExternalAccount?.email ?? null}
         />
       ) : null}
+    </div>
+  );
+}
+
+function TerminalTabline({ managementHost, view }: { managementHost: string; view: ViewKey }) {
+  const viewLabel = view === "mail" ? "mail" : view === "index-engine" ? "index" : view;
+
+  return (
+    <div className="terminal-tabline">
+      <div className="terminal-tabline-left">
+        <div className="terminal-tab active">
+          <span className="terminal-tab-brand">OMNIDOCK</span>
+          <span className="terminal-tab-num">dock</span>
+        </div>
+        <div className="terminal-tab">
+          <span>{viewLabel}</span>
+        </div>
+      </div>
+      <div className="terminal-tabline-right">
+        {managementHost} | utf-8 | unix
+      </div>
     </div>
   );
 }
