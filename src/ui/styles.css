@@ -3829,8 +3829,8 @@ button:hover:not(:disabled) {
 /* Gruvbox terminal redesign - forum-lite aligned */
 :root {
   color-scheme: dark;
-  --font-sans: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  --font-mono: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-sans: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+  --font-mono: "JetBrains Mono", "Fira Code", "Courier New", monospace;
   --body: var(--font-sans);
   --mono: var(--font-mono);
   --desktop: #282828;
@@ -4135,6 +4135,15 @@ select {
   border-top: 1px solid var(--line-strong);
 }
 
+.bucket-switcher {
+  padding: 6px 10px 4px;
+}
+
+.bucket-switcher .section-title {
+  padding-left: 6px;
+  padding-right: 2px;
+}
+
 .tools-section + .settings-section {
   margin-top: 0;
 }
@@ -4270,6 +4279,15 @@ textarea::placeholder {
   border-radius: 0;
   background: var(--bg);
   box-shadow: 0 12px 28px rgba(0, 0, 0, .38);
+}
+
+.mailbox-switcher .custom-select-menu,
+.bucket-switcher .custom-select-menu {
+  left: 0;
+  right: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .custom-select-option,
@@ -4510,8 +4528,14 @@ textarea::placeholder {
   color: var(--text);
 }
 
+.pane-head strong {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
 .pane-head {
-  height: 48px;
+  height: 44px;
   border-bottom-color: var(--line-strong);
   background: var(--panel);
 }
@@ -4583,8 +4607,9 @@ textarea::placeholder {
 
 .detail-head h2 {
   color: var(--text);
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .message-stack {
