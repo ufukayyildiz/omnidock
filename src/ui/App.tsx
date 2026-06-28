@@ -4769,7 +4769,6 @@ function ThreadList({
     <section className="thread-list">
       <div className="pane-head">
         <div>
-          <span>{folder}</span>
           <strong>{activeMailboxLabel ?? "All mailboxes"}</strong>
           <small>{countLabel}</small>
         </div>
