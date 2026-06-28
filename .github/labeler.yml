@@ -1,0 +1,43 @@
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - package.json
+          - package-lock.json
+          - .github/dependabot.yml
+
+github-actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - docs/**
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/**/*.css
+          - src/**/*.tsx
+          - src/**/*.ts
+          - index.html
+          - public/**
+
+worker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/worker/**
+          - worker-configuration.d.ts
+          - wrangler.jsonc
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - migrations/**
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tools/*.test.mjs
