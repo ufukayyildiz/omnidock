@@ -1075,15 +1075,7 @@ function AppContent() {
           </div>
         </header>
 
-        {notice ? (
-          <div className="notice">
-            <AlertTriangle size={16} />
-            <span>{notice.message}</span>
-            <button className="icon-button" type="button" onClick={() => setNotice(null)} title="Dismiss">
-              <X size={14} />
-            </button>
-          </div>
-        ) : null}
+        {notice ? <NoticeDialog notice={notice} onDismiss={() => setNotice(null)} /> : null}
 
         {view === "buckets" ? (
           <BucketsView
@@ -1215,6 +1207,29 @@ function TerminalTabline({ managementHost, view }: { managementHost: string; vie
       <div className="terminal-tabline-right">
         {managementHost} | utf-8 | unix
       </div>
+    </div>
+  );
+}
+
+function NoticeDialog({ notice, onDismiss }: { notice: NoticeState; onDismiss: () => void }) {
+  return (
+    <div className="modal-scrim app-dialog-scrim notice-dialog-scrim" role="alertdialog" aria-modal="true" aria-labelledby="notice-dialog-title">
+      <section className="app-dialog notice-dialog">
+        <header>
+          <span className="app-dialog-icon notice-dialog-icon">
+            <AlertTriangle size={17} />
+          </span>
+          <div>
+            <strong id="notice-dialog-title">Notice</strong>
+            <div className="app-dialog-message">{notice.message}</div>
+          </div>
+        </header>
+        <div className="app-dialog-actions">
+          <button className="button ghost" type="button" onClick={onDismiss}>
+            Close
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
