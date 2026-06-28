@@ -69,7 +69,7 @@
     "postal-mime": "2.7.4",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "vite": "8.0.16"
+    "vite": "8.1.0"
   },
   "devDependencies": {
     "@types/node": "26.0.0",
