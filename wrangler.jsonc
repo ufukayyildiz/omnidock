@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
   "observability": {
+    "issues": { "enabled": true },
     "enabled": true,
     "head_sampling_rate": 1
   },
