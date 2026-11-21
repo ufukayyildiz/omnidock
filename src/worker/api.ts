@@ -138,12 +138,6 @@ export async function handleApi(
       }
       const primaryDomain = normalizeDomain(primaryDomainInput);
       const recoveryEmail = requiredString(body, "recoveryEmail", { max: 320 });
-      const domain = await upsertDomain(env, {
-        domain: primaryDomain,
-        source: "setup",
-        status: "manual"
-      });
-      await setDefaultDomain(env, domain.id);
       await createAdminAccount(
         env,
         {
@@ -155,6 +149,12 @@ export async function handleApi(
         },
         request
       );
+      const domain = await upsertDomain(env, {
+        domain: primaryDomain,
+        source: "setup",
+        status: "manual"
+      });
+      await setDefaultDomain(env, domain.id);
       ctx.waitUntil(recordAudit(env, "admin.created", "primary", { primaryDomain }));
       return json({ ok: true }, { status: 201 });
     }
@@ -822,7 +822,7 @@ export async function handleApi(
     if (replyMatch) {
       if (request.method !== "POST") return methodNotAllowed();
       requireMailSendBindings(env);
-      const body = await readJson(request);
+      const body = await readJson(request, 30 * 1024 * 1024);
       const sent = await sendEmail(env, {
         from: requiredString(body, "from", { max: 320 }),
         fromName: optionalString(body, "fromName", { max: 128 }),
@@ -841,7 +841,7 @@ export async function handleApi(
     if (url.pathname === "/api/send") {
       if (request.method !== "POST") return methodNotAllowed();
       requireMailSendBindings(env);
-      const body = await readJson(request);
+      const body = await readJson(request, 30 * 1024 * 1024);
       const sent = await sendEmail(env, {
         from: requiredString(body, "from", { max: 320 }),
         fromName: optionalString(body, "fromName", { max: 128 }),

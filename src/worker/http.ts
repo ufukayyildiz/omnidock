@@ -77,13 +77,14 @@ function applySecurityHeaders(headers: Headers): void {
   );
 }
 
-export async function readJson(request: Request): Promise<Record<string, unknown>> {
+export async function readJson(request: Request, maxBytes = 1024 * 1024): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     throw new ApiError(415, "unsupported_media_type", "Expected application/json");
   }
 
-  const body = await request.json().catch(() => {
+  const body = await readBoundedJson(request, maxBytes).catch((error: unknown) => {
+    if (error instanceof ApiError) throw error;
     throw new ApiError(400, "invalid_json", "Body must be valid JSON");
   });
 
@@ -92,6 +93,35 @@ export async function readJson(request: Request): Promise<Record<string, unknown
   }
 
   return body;
+}
+
+async function readBoundedJson(request: Request, maxBytes: number): Promise<unknown> {
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (declaredLength > maxBytes) {
+    await request.body?.cancel();
+    throw new ApiError(413, "body_too_large", "Request body is too large");
+  }
+  const reader = request.body?.getReader();
+  if (!reader) throw new SyntaxError("Missing JSON body");
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel();
+        throw new ApiError(413, "body_too_large", "Request body is too large");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return JSON.parse(text);
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export function requiredString(

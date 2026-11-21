@@ -360,7 +360,7 @@ async function getAuthAttempt(env: RuntimeEnv, key: string): Promise<AuthAttempt
 }
 
 async function authAttemptKey(request: Request): Promise<string> {
-  const forwarded = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "unknown";
+  const forwarded = request.headers.get("cf-connecting-ip") ?? "unknown";
   const ip = forwarded.split(",")[0]?.trim() || "unknown";
   return `auth:${await sha256Base64(ip)}`;
 }
