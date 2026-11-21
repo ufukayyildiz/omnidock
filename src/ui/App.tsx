@@ -1,5 +1,9 @@
+import { DEFAULT_REFRESH_INTERVAL_SECONDS, parseRefreshInterval, readPreference, writePreference } from "./preferences";
 import {
   AlertTriangle,
+  ArrowLeft,
+  Info,
+  Menu,
   Archive,
   Bold,
   ChevronDown,
@@ -51,6 +55,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState
@@ -95,8 +100,6 @@ import {
 const DEFAULT_MAILBOX_KEY = "omnidock.defaultMailbox";
 const REFRESH_INTERVAL_KEY = "omnidock.refreshIntervalSeconds";
 const REPLY_COMPOSER_COLLAPSED_KEY = "omnidock.replyComposerCollapsed";
-const DEFAULT_REFRESH_INTERVAL_SECONDS = 10;
-const NOTICE_AUTO_DISMISS_MS = 3000;
 const EXTERNAL_MAILBOX_SCOPE_PREFIX = "external:";
 const THREAD_PAGE_SIZE = 80;
 const EXTERNAL_SYNC_POLL_INTERVAL_MS = 2500;
@@ -238,12 +241,11 @@ const securityOptions: SelectOption[] = [
 ];
 
 function initialRefreshIntervalSeconds(): number {
-  const stored = Number(localStorage.getItem(REFRESH_INTERVAL_KEY));
-  return Number.isFinite(stored) && stored >= 0 ? stored : DEFAULT_REFRESH_INTERVAL_SECONDS;
+  return parseRefreshInterval(readPreference(REFRESH_INTERVAL_KEY));
 }
 
 function initialReplyComposerCollapsed(): boolean {
-  return localStorage.getItem(REPLY_COMPOSER_COLLAPSED_KEY) === "true";
+  return readPreference(REPLY_COMPOSER_COLLAPSED_KEY) === "true";
 }
 
 export function App() {
@@ -251,6 +253,43 @@ export function App() {
     <AppDialogProvider>
       <AppContent />
     </AppDialogProvider>
+  );
+}
+
+function Modal({ children, className = "", labelledBy, onClose }: {
+  children: ReactNode;
+  className?: string;
+  labelledBy: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement;
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, []);
+  return (
+    <dialog ref={ref} className={`modal-scrim ${className}`} aria-labelledby={labelledBy}
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [contenteditable="true"], [tabindex="0"]'
+        )).filter((control) => control.tabIndex >= 0 && control.getClientRects().length > 0);
+        const target = event.shiftKey ? controls.at(-1) : controls[0];
+        const boundary = event.shiftKey ? controls[0] : controls.at(-1);
+        if (document.activeElement === boundary || controls.length === 0) {
+          event.preventDefault();
+          target?.focus();
+        }
+      }}>
+      {children}
+    </dialog>
   );
 }
 
@@ -281,20 +320,6 @@ function AppDialogProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  useEffect(() => {
-    if (!dialog) return;
-    const activeDialog = dialog;
-
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        closeDialog(activeDialog.kind === "prompt" ? null : false);
-      }
-    }
-
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [closeDialog, dialog]);
-
   const value = useMemo(() => ({ confirm, prompt }), [confirm, prompt]);
   const confirmLabel = dialog?.confirmLabel ?? (dialog?.kind === "prompt" ? "Apply" : "OK");
   const cancelLabel = dialog?.cancelLabel ?? "Cancel";
@@ -304,7 +329,7 @@ function AppDialogProvider({ children }: { children: ReactNode }) {
     <AppDialogContext.Provider value={value}>
       {children}
       {dialog ? (
-        <div className="modal-scrim app-dialog-scrim" role="dialog" aria-modal="true" aria-labelledby="app-dialog-title">
+        <Modal className="app-dialog-scrim" labelledBy="app-dialog-title" onClose={() => closeDialog(dialog.kind === "prompt" ? null : false)}>
           <form
             className={isDanger ? "app-dialog danger" : "app-dialog"}
             onSubmit={(event) => {
@@ -326,6 +351,7 @@ function AppDialogProvider({ children }: { children: ReactNode }) {
                   value={promptValue}
                   onChange={(event) => setPromptValue(event.target.value)}
                   placeholder={dialog.placeholder}
+                  aria-label={dialog.title}
                   autoFocus
                 />
               ) : (
@@ -334,6 +360,7 @@ function AppDialogProvider({ children }: { children: ReactNode }) {
                   value={promptValue}
                   onChange={(event) => setPromptValue(event.target.value)}
                   placeholder={dialog.placeholder}
+                  aria-label={dialog.title}
                   autoFocus
                 />
               )
@@ -347,7 +374,7 @@ function AppDialogProvider({ children }: { children: ReactNode }) {
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       ) : null}
     </AppDialogContext.Provider>
   );
@@ -376,7 +403,7 @@ function AppContent() {
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
   const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(null);
   const [selectedBucketId, setSelectedBucketId] = useState<string | null>(null);
-  const [defaultMailboxId, setDefaultMailboxId] = useState(() => localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "");
+  const [defaultMailboxId, setDefaultMailboxId] = useState(() => readPreference(DEFAULT_MAILBOX_KEY) ?? "");
   const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(initialRefreshIntervalSeconds);
   const [folderStats, setFolderStats] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
@@ -390,6 +417,30 @@ function AppContent() {
   const [syncLog, setSyncLog] = useState("Ready");
   const [busy, setBusy] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setMobileThreadOpen(false);
+  }, [view, folder, selectedMailboxId, authenticated]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    function closeNavigation(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setMobileMenuOpen(false);
+      document.querySelector<HTMLButtonElement>(".mobile-menu-toggle")?.focus();
+    }
+    window.addEventListener("keydown", closeNavigation);
+    return () => window.removeEventListener("keydown", closeNavigation);
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    if (mobileThreadOpen && window.matchMedia("(max-width: 920px)").matches) {
+      document.querySelector<HTMLButtonElement>(".mobile-thread-back")?.focus();
+    }
+  }, [mobileThreadOpen]);
   const externalSyncingIds = useRef<Set<string>>(new Set());
   const externalSyncMonitorRef = useRef(false);
   const sessionCheckRef = useRef(false);
@@ -443,14 +494,14 @@ function AppContent() {
     setSelectedMailboxId((current) => {
       if (current && mailboxScopes.includes(current)) return current;
 
-      const storedDefaultId = localStorage.getItem(DEFAULT_MAILBOX_KEY) ?? "";
+      const storedDefaultId = readPreference(DEFAULT_MAILBOX_KEY) ?? "";
       if (storedDefaultId && mailboxScopes.includes(storedDefaultId)) {
         setDefaultMailboxId(storedDefaultId);
         return storedDefaultId;
       }
 
       if (storedDefaultId) {
-        localStorage.removeItem(DEFAULT_MAILBOX_KEY);
+        writePreference(DEFAULT_MAILBOX_KEY, null);
         setDefaultMailboxId("");
       }
 
@@ -662,7 +713,7 @@ function AppContent() {
   }, [api, bootstrap, query, selectedMailboxId, view, loadThreads]);
 
   useEffect(() => {
-    localStorage.setItem(REFRESH_INTERVAL_KEY, String(refreshIntervalSeconds));
+    writePreference(REFRESH_INTERVAL_KEY, String(refreshIntervalSeconds));
   }, [refreshIntervalSeconds]);
 
   useEffect(() => {
@@ -683,15 +734,6 @@ function AppContent() {
     }, 9000);
     return () => window.clearTimeout(timer);
   }, [busy, syncLog]);
-
-  useEffect(() => {
-    if (!notice) return;
-    const noticeId = notice.id;
-    const timer = window.setTimeout(() => {
-      setNoticeState((current) => (current?.id === noticeId ? null : current));
-    }, NOTICE_AUTO_DISMISS_MS);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   useEffect(() => {
     if (activeThreadId) {
@@ -893,13 +935,13 @@ function AppContent() {
   const defaultExternalAccount = externalAccountFromScope(defaultMailboxId, externalAccounts);
   const setDefaultMailboxPreference = () => {
     if (!selectedMailboxId || !activeMailboxLabel) {
-      localStorage.removeItem(DEFAULT_MAILBOX_KEY);
+      writePreference(DEFAULT_MAILBOX_KEY, null);
       setDefaultMailboxId("");
       setNotice("Default mailbox cleared");
       return;
     }
 
-    localStorage.setItem(DEFAULT_MAILBOX_KEY, selectedMailboxId);
+    writePreference(DEFAULT_MAILBOX_KEY, selectedMailboxId);
     setDefaultMailboxId(selectedMailboxId);
     setNotice(`Default mailbox set to ${activeMailboxLabel}`);
   };
@@ -983,8 +1025,9 @@ function AppContent() {
   }
 
   return (
-    <div className="app-shell">
-      <TerminalTabline managementHost={bootstrap?.managementHost ?? window.location.host} view={view} />
+    <div className={mobileMenuOpen ? "app-shell mobile-menu-open" : "app-shell"}>
+      <TerminalTabline managementHost={bootstrap?.managementHost ?? window.location.host} view={view}
+        menuOpen={mobileMenuOpen} onMenuToggle={() => setMobileMenuOpen((open) => !open)} />
       <Sidebar
         managementHost={bootstrap?.managementHost ?? window.location.host}
         mailboxes={mailboxes}
@@ -998,10 +1041,12 @@ function AppContent() {
         refreshIntervalSeconds={refreshIntervalSeconds}
         onMailboxChange={changeMailboxScope}
         onBucketOpen={(bucketId) => {
+          setMobileMenuOpen(false);
           setSelectedBucketId(bucketId);
           setView("buckets");
         }}
         onFolderChange={(nextFolder) => {
+          setMobileMenuOpen(false);
           setFolder(nextFolder);
           setView("mail");
           setThreads([]);
@@ -1010,7 +1055,7 @@ function AppContent() {
           setActiveThreadId(null);
           setThread(null);
         }}
-        onSettingsOpen={setView}
+        onSettingsOpen={(nextView) => { setView(nextView); setMobileMenuOpen(false); }}
         onLock={lock}
       />
 
@@ -1020,7 +1065,7 @@ function AppContent() {
             <div className="mail-search">
               <div className="search-wrap">
                 <Search size={18} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subject, body, sender, recipient" />
+                <input aria-label="Search mail" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subject, body, sender, recipient" />
               </div>
               <div className="search-scope" aria-label="Mailbox scope">
                 <CustomSelect
@@ -1130,7 +1175,13 @@ function AppContent() {
             onRefreshIntervalChange={changeRefreshIntervalSeconds}
           />
         ) : (
-          <section className="main-grid">
+          <section className={mobileThreadOpen ? "main-grid mobile-thread-open" : "main-grid"}>
+            <button className="button ghost mobile-thread-back" type="button" onClick={() => {
+              setMobileThreadOpen(false);
+              requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".thread-row.active")?.focus());
+            }}>
+              <ArrowLeft size={16} /> Back to messages
+            </button>
             <ThreadList
               threads={threads}
               total={threadTotal}
@@ -1139,7 +1190,7 @@ function AppContent() {
               activeThreadId={activeThreadId}
               folder={folder}
               activeMailboxLabel={activeMailboxLabel}
-              onSelect={(threadId) => setActiveThreadId(threadId)}
+              onSelect={(threadId) => { setActiveThreadId(threadId); setMobileThreadOpen(true); }}
               onLoadMore={() => void loadThreads({ append: true, preserveSelection: true, offset: threads.length })}
             />
             <ThreadDetail
@@ -1190,12 +1241,18 @@ function AppContent() {
   );
 }
 
-function TerminalTabline({ managementHost, view }: { managementHost: string; view: ViewKey }) {
+function TerminalTabline({ managementHost, view, menuOpen, onMenuToggle }: {
+  managementHost: string; view: ViewKey; menuOpen: boolean; onMenuToggle: () => void;
+}) {
   const viewLabel = view === "mail" ? "mail" : view === "index-engine" ? "index" : view;
 
   return (
     <div className="terminal-tabline">
       <div className="terminal-tabline-left">
+        <button className="icon-button mobile-menu-toggle" type="button" onClick={onMenuToggle}
+          aria-expanded={menuOpen} aria-controls="workspace-navigation" aria-label={menuOpen ? "Close navigation" : "Open navigation"}>
+          {menuOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
         <div className="terminal-tab active">
           <span className="terminal-tab-brand">OMNIDOCK</span>
           <span className="terminal-tab-num">dock</span>
@@ -1213,11 +1270,11 @@ function TerminalTabline({ managementHost, view }: { managementHost: string; vie
 
 function NoticeDialog({ notice, onDismiss }: { notice: NoticeState; onDismiss: () => void }) {
   return (
-    <div className="modal-scrim app-dialog-scrim notice-dialog-scrim" role="alertdialog" aria-modal="true" aria-labelledby="notice-dialog-title">
+    <div className="notice-dialog-scrim" role="status" aria-live="polite">
       <section className="app-dialog notice-dialog">
         <header>
           <span className="app-dialog-icon notice-dialog-icon">
-            <AlertTriangle size={17} />
+            <Info size={17} />
           </span>
           <div>
             <strong id="notice-dialog-title">Notice</strong>
@@ -1280,6 +1337,8 @@ function LoginScreen({
           id="password"
           className="text-input"
           type="password"
+          autoComplete="current-password"
+          required
           value={draftPassword}
           onChange={(event) => setDraftPassword(event.target.value)}
           autoFocus
@@ -1763,14 +1822,7 @@ function AuthGate({
   );
 }
 
-function CustomSelect({
-  value,
-  options,
-  onChange,
-  disabled = false,
-  title,
-  className = ""
-}: {
+function CustomSelect({ value, options, onChange, disabled = false, title, className = "" }: {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
@@ -1778,76 +1830,19 @@ function CustomSelect({
   title?: string;
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const selected = options.find((option) => option.value === value) ?? options[0] ?? { value: "", label: "Select" };
-
-  useEffect(() => {
-    if (!open) return;
-
-    function closeOnOutside(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    function closeOnEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", closeOnOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
+  const id = useId();
   return (
-    <div className={["custom-select", className, open ? "open" : ""].filter(Boolean).join(" ")} ref={rootRef}>
-      <button
-        className="custom-select-trigger"
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        disabled={disabled || options.length === 0}
-        aria-expanded={open}
-        title={title}
-      >
-        <span>{selected.label}</span>
-        <ChevronDown size={15} />
-      </button>
-      {open ? (
-        <div className="custom-select-menu" role="listbox">
-          {options.map((option) => (
-            <button
-              className={[
-                "custom-select-option",
-                option.value === value ? "active" : "",
-                option.disabled ? "disabled" : ""
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              key={option.value}
-              type="button"
-              disabled={option.disabled}
-              onClick={() => {
-                if (option.disabled) return;
-                onChange(option.value);
-                setOpen(false);
-              }}
-              role="option"
-              aria-selected={option.value === value}
-              aria-disabled={option.disabled}
-            >
-              <span className="custom-select-option-label">{option.label}</span>
-              {option.value === value ? <CheckCircle2 className="custom-select-option-check" size={14} /> : null}
-              {option.description ? <small className="custom-select-option-description">{option.description}</small> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
+    <div className={["custom-select", className].filter(Boolean).join(" ")}>
+      <select id={id} className="custom-select-trigger" value={value}
+        onChange={(event) => onChange(event.target.value)} disabled={disabled || options.length === 0}
+        aria-label={title} title={title}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value} disabled={option.disabled} title={option.description}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={15} aria-hidden="true" className="custom-select-chevron" />
     </div>
   );
 }
@@ -2012,7 +2007,7 @@ function Sidebar({
   }, [view]);
 
   return (
-    <aside className="sidebar">
+    <aside id="workspace-navigation" className="sidebar" aria-label="Workspace navigation">
       <div className="brand-row">
         <img src="/omnidock-mark.svg" alt="" />
         <div>
@@ -2040,6 +2035,7 @@ function Sidebar({
               key={item.key}
               className={active ? "nav-item active" : "nav-item"}
               type="button"
+              aria-current={active ? "page" : undefined}
               onClick={() => onFolderChange(item.key)}
             >
               <Icon size={16} />
@@ -2056,6 +2052,7 @@ function Sidebar({
           <span>Buckets</span>
           <b>{buckets.length}</b>
         </div>
+        <div className="sidebar-bucket-controls">
         <CustomSelect
           value={selectedBucketId ?? bucketOptions[0]?.value ?? ""}
           onChange={(value) => {
@@ -2065,10 +2062,19 @@ function Sidebar({
           options={bucketOptions}
           title="Bucket"
         />
+        <button className="icon-button" type="button" title="Open bucket" aria-label="Open bucket"
+          disabled={buckets.length === 0}
+          onClick={() => {
+            const bucketId = selectedBucketId ?? bucketOptions[0]?.value;
+            if (bucketId) onBucketOpen(bucketId);
+          }}>
+          <FolderGit2 size={16} />
+        </button>
+        </div>
       </div>
 
       <div className="sidebar-section tools-section">
-        <button className="section-title section-toggle" type="button" onClick={() => setToolsOpen((current) => !current)}>
+        <button className="section-title section-toggle" type="button" aria-expanded={toolsOpen} onClick={() => setToolsOpen((current) => !current)}>
           {toolsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span>Tools</span>
           <b>1</b>
@@ -2085,7 +2091,7 @@ function Sidebar({
       </div>
 
       <div className="sidebar-section settings-section">
-        <button className="section-title section-toggle" type="button" onClick={() => setSettingsOpen((current) => !current)}>
+        <button className="section-title section-toggle" type="button" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((current) => !current)}>
           {settingsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <Settings size={14} />
           <span>Settings</span>
@@ -4316,6 +4322,7 @@ function BucketsView({
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              aria-label="Search files, paths, text"
               placeholder="Search files, paths, text"
             />
           </div>
@@ -5123,6 +5130,9 @@ function RichTextEditor({
       <div
         className="rich-editor-surface"
         contentEditable
+        role="textbox"
+        aria-multiline="true"
+        aria-label={placeholder}
         data-placeholder={placeholder}
         onBlur={handleEditorBlur}
         onInput={() => {
@@ -5140,7 +5150,6 @@ function RichTextEditor({
         }}
         onMouseUp={saveSelection}
         ref={editorRef}
-        role="textbox"
         spellCheck
         suppressContentEditableWarning
       />
@@ -5199,7 +5208,7 @@ function ThreadDetail({
   }, [firstMessage?.thread_id]);
 
   useEffect(() => {
-    localStorage.setItem(REPLY_COMPOSER_COLLAPSED_KEY, replyCollapsed ? "true" : "false");
+    writePreference(REPLY_COMPOSER_COLLAPSED_KEY, replyCollapsed ? "true" : "false");
   }, [replyCollapsed]);
 
   if (!thread || !firstMessage) {
@@ -5519,11 +5528,11 @@ function ComposeDialog({
   }
 
   return (
-    <div className="modal-scrim" role="dialog" aria-modal="true">
+    <Modal labelledBy="compose-dialog-title" onClose={() => { if (!busy) onClose(); }}>
       <form className="compose-modal" onSubmit={submit}>
         <header>
-          <strong>Compose</strong>
-          <button className="icon-button" type="button" onClick={onClose} title="Close">
+          <strong id="compose-dialog-title">Compose</strong>
+          <button className="icon-button" type="button" onClick={onClose} title="Close" aria-label="Close" disabled={busy}>
             <X size={16} />
           </button>
         </header>
@@ -5595,7 +5604,7 @@ function ComposeDialog({
           {attachmentsLoading ? "Loading attachments" : busy ? "Sending" : "Send"}
         </button>
       </form>
-    </div>
+    </Modal>
   );
 }
 
@@ -5705,12 +5714,12 @@ function AttachmentPreviewDialog({
   }
 
   return (
-    <div className="modal-scrim preview-scrim" role="dialog" aria-modal="true">
+    <Modal className="preview-scrim" labelledBy="attachment-preview-title" onClose={onClose}>
       <section className="attachment-preview-modal">
         <header>
           <div>
             <span>Attachment preview</span>
-            <strong>{attachment.filename}</strong>
+            <strong id="attachment-preview-title">{attachment.filename}</strong>
             <small>
               {attachment.content_type || "application/octet-stream"} · {formatBytes(attachment.size)}
             </small>
@@ -5779,7 +5788,7 @@ function AttachmentPreviewDialog({
           )}
         </div>
       </section>
-    </div>
+    </Modal>
   );
 }
 
