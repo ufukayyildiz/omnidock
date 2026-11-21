@@ -64,12 +64,12 @@
     }
   },
   "dependencies": {
-    "@vitejs/plugin-react": "6.1.1",
+    "@vitejs/plugin-react": "6.3.0",
     "fflate": "^0.8.3",
-    "lucide-react": "1.47.0",
+    "lucide-react": "1.77.0",
     "postal-mime": "4.2.1",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "vite": "8.3.8"
   },
   "devDependencies": {
